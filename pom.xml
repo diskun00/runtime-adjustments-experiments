@@ -10,10 +10,10 @@
 
     <properties>
         <!-- Scala -->
-        <scala.tools.version>2.11</scala.tools.version>
-        <scala.version>${scala.tools.version}.7</scala.version>
+        <scala.tools.version>2.12</scala.tools.version>
+        <scala.version>${scala.tools.version}.10</scala.version>
         <!-- Spark -->
-        <spark.version>2.1.0</spark.version>
+        <spark.version>3.0.0</spark.version>
     </properties>
 
     <dependencies>
@@ -21,12 +21,12 @@
         <dependency>
             <groupId>org.rogach</groupId>
             <artifactId>scallop_${scala.tools.version}</artifactId>
-            <version>2.1.1</version>
+            <version>3.5.0</version>
         </dependency>
         <dependency>
             <groupId>org.scalanlp</groupId>
             <artifactId>breeze_${scala.tools.version}</artifactId>
-            <version>0.12</version>
+            <version>1.1</version>
         </dependency>
         <dependency>
             <groupId>com.typesafe</groupId>

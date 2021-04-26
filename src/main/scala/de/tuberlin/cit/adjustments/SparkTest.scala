@@ -24,34 +24,34 @@ object SparkTest {
       .set("spark.dynamicAllocation.enabled", "true")
 //      .set("spark.extraListeners", "de.tuberlin.cit.spark.StageScaleOutPredictor") // this makes sure the 'app start' event is called
 
-    val sparkContext = new SparkContext(sparkConf)
-    val listener = new StageScaleOutPredictor(
-      sparkContext,
-      appSignature,
-      conf.dbPath(),
-      conf.minContainers(),
-      conf.maxContainers(),
-      conf.maxRuntime().toInt,
-      conf.adaptive())
-    sparkContext.addSparkListener(listener)
-
-    val trainingSet = getTrainingSet(sparkContext, 2000000, 20).cache()
-
-    val numIterations = 100
-    val stepSize = 1.0
-    val regParam = 0.01
-
-    val algorithm = new LinearRegressionWithSGD()
-    algorithm.optimizer
-      .setNumIterations(numIterations)
-      .setStepSize(stepSize)
-      .setUpdater(new SquaredL2Updater())
-      .setRegParam(regParam)
-
-    val model = algorithm.run(trainingSet)
-    println(model.weights)
-
-    sparkContext.stop()
+//    val sparkContext = new SparkContext(sparkConf)
+//    val listener = new StageScaleOutPredictor(
+//      sparkContext,
+//      appSignature,
+//      conf.dbPath(),
+//      conf.minContainers(),
+//      conf.maxContainers(),
+//      conf.maxRuntime().toInt,
+//      conf.adaptive())
+//    sparkContext.addSparkListener(listener)
+//
+//    val trainingSet = getTrainingSet(sparkContext, 2000000, 20).cache()
+//
+//    val numIterations = 100
+//    val stepSize = 1.0
+//    val regParam = 0.01
+//
+//    val algorithm = new LinearRegressionWithSGD()
+//    algorithm.optimizer
+//      .setNumIterations(numIterations)
+//      .setStepSize(stepSize)
+//      .setUpdater(new SquaredL2Updater())
+//      .setRegParam(regParam)
+//
+//    val model = algorithm.run(trainingSet)
+//    println(model.weights)
+//
+//    sparkContext.stop()
   }
 
   def getTrainingSet(sc: SparkContext, m: Int, n: Int): RDD[LabeledPoint] = {

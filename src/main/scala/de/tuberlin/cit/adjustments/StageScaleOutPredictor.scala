@@ -142,7 +142,8 @@ class StageScaleOutPredictor(
     val xPredict = DenseVector(predictedScaleOuts)
 
     // subdivide the scaleout range into interpolation and extrapolation
-    val interpolationMask: BitVector = (xPredict :>= min(scaleOuts)) :& (xPredict :<= max(scaleOuts))
+//    val interpolationMask: BitVector = (xPredict :>= min(scaleOuts)) :& (xPredict :<= max(scaleOuts))
+    val interpolationMask: BitVector = (xPredict >:= min(scaleOuts)) &:& (xPredict <:= max(scaleOuts))
     val xPredictInterpolation = xPredict(interpolationMask).toDenseVector
     val xPredictExtrapolation = xPredict(!interpolationMask).toDenseVector
 
