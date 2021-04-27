@@ -1,17 +1,13 @@
-package de.tuberlin.cit.adjustments
+package de.tuberlin.cit.prediction
 
-import breeze.numerics.pow
-import org.apache.spark.mllib.linalg.{DenseVector, Vectors}
-import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.rdd.RDD
+import de.tuberlin.cit.adjustments.{Args, StageScaleOutPredictor}
 import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.mllib.linalg.Vectors
+import org.scalatest.FlatSpec
 
-import java.util.concurrent.ThreadLocalRandom
+class ScaleOutTest extends FlatSpec{
 
-object SparkTest {
-
-
-  def main(args: Array[String]): Unit = {
+  def test_run(args: Array[String]): Unit = {
 
     val conf = new Args(args)
 
@@ -55,31 +51,6 @@ object SparkTest {
     })
 
     sparkContext.stop()
-  }
-
-  def getTrainingSet(sc: SparkContext, m: Int, n: Int): RDD[LabeledPoint] = {
-    sc
-      .range(1, m)
-      .map(_ => {
-        val x = ThreadLocalRandom.current().nextDouble()
-        val noise = ThreadLocalRandom.current().nextGaussian()
-
-        // generate the function value with added gaussian noise
-        val label = function(x) + noise
-
-        // generate a vandermonde matrix from x
-        val vector = polyvander(x, n - 1)
-
-        LabeledPoint(label, new DenseVector(vector))
-      })
-  }
-
-  def polyvander(x: Double, order: Int): Array[Double] = {
-    (0 to order).map(pow(x, _)).toArray
-  }
-
-  def function(x: Double): Double = {
-    2 * x + 10
   }
 
 }

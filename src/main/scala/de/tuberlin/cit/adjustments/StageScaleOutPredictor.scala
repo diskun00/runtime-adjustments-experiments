@@ -7,7 +7,7 @@ import de.tuberlin.cit.prediction.{Bell, Ernest, UnivariatePredictor}
 import org.apache.spark.SparkContext
 import org.apache.spark.scheduler._
 import scalikejdbc._
-
+import org.apache.log4j.{Logger}
 import scala.language.postfixOps
 
 class StageScaleOutPredictor(
@@ -28,12 +28,14 @@ class StageScaleOutPredictor(
   private var scaleOut: Int = _
   private var nextScaleOut: Int = _
 
+  private val logger: Logger = Logger.getLogger(classOf[StageScaleOutPredictor])
+
   Class.forName("org.h2.Driver")
   ConnectionPool.singleton(s"jdbc:h2:$dbPath", "sa", "")
 
   scaleOut = computeInitialScaleOut()
   nextScaleOut = scaleOut
-  println(s"Using initial scale-out of $scaleOut.")
+  logger.info(s"Using initial scale-out of $scaleOut.")
 
   sparkContext.requestTotalExecutors(scaleOut, 0, Map[String,Int]())
 
@@ -185,7 +187,7 @@ class StageScaleOutPredictor(
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
-    println(s"Job ${jobStart.jobId} started.")
+    logger.info(s"Job ${jobStart.jobId} started.")
     jobStartTime = jobStart.time
 
     // https://stackoverflow.com/questions/29169981/why-is-sparklistenerapplicationstart-never-fired
@@ -213,7 +215,7 @@ class StageScaleOutPredictor(
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
     jobEndTime = jobEnd.time
     val jobDuration = jobEndTime - jobStartTime
-    println(s"Job ${jobEnd.jobId} finished in $jobDuration ms with $scaleOut nodes.")
+    logger.info(s"Job ${jobEnd.jobId} finished in $jobDuration ms with $scaleOut nodes.")
 
     DB localTx { implicit session =>
       sql"""
@@ -289,13 +291,13 @@ class StageScaleOutPredictor(
     val futureJobsRuntimes = remainingRuntimes.drop(1).fold(DenseVector.zeros[Int](predictedScaleOuts.length))(_ + _)
 
     val currentRuntime = jobEndTime - appStartTime
-    println(s"Current runtime: $currentRuntime")
+    logger.info(s"Current runtime: $currentRuntime")
     val nextJobRuntime = nextJobRuntimes(scaleOut - minExecutors)
-    println(s"Next job runtime prediction: $nextJobRuntime")
+    logger.info(s"Next job runtime prediction: $nextJobRuntime")
     val remainingTargetRuntime = targetRuntimeMs - currentRuntime - nextJobRuntime
-    println(s"Remaining runtime: $remainingTargetRuntime")
+    logger.info(s"Remaining runtime: $remainingTargetRuntime")
     val remainingRuntimePrediction = futureJobsRuntimes(scaleOut - minExecutors)
-    println(s"Remaining runtime prediction: $remainingRuntimePrediction")
+    logger.info(s"Remaining runtime prediction: $remainingRuntimePrediction")
 
     // check if current scale-out can fulfill the target runtime constraint
     val relativeSlackUp = 1.05
@@ -313,7 +315,7 @@ class StageScaleOutPredictor(
       val nextScaleOut = predictedScaleOuts(nextScaleOutIndex)
 
       if (nextScaleOut != scaleOut) {
-        println(s"Adjusting scale-out to $nextScaleOut after job $nextJobId.")
+        logger.info(s"Adjusting scale-out to $nextScaleOut after job $nextJobId.")
         sparkContext.requestTotalExecutors(nextScaleOut, 0, Map[String,Int]())
         this.nextScaleOut = nextScaleOut
       }
@@ -327,11 +329,13 @@ class StageScaleOutPredictor(
       val nextScaleOut = predictedScaleOuts(nextScaleOutIndex)
 
       if (nextScaleOut < scaleOut) {
-        println(s"Adjusting scale-out to $nextScaleOut after job $nextJobId.")
+        logger.info(s"Adjusting scale-out to $nextScaleOut after job $nextJobId.")
         sparkContext.requestTotalExecutors(nextScaleOut, 0, Map[String,Int]())
         this.nextScaleOut = nextScaleOut
       }
 
+    } else {
+      logger.debug(s"Scale-out is not changed.")
     }
 
   }
