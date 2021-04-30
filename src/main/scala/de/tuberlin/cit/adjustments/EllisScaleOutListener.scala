@@ -1,23 +1,26 @@
 package de.tuberlin.cit.adjustments
 
-import java.util.{Date, Optional}
+import java.util.Date
 import breeze.linalg._
 import de.tuberlin.cit.prediction.{Bell, Ernest, UnivariatePredictor}
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.scheduler._
 import scalikejdbc._
-import org.apache.log4j.{Logger}
+import org.apache.log4j.Logger
+
 import scala.language.postfixOps
 
-class StageScaleOutPredictor(
-                              sparkContext: SparkContext,
-                              appSignature: String,
-                              dbPath: String,
-                              minExecutors: Int,
-                              maxExecutors: Int,
-                              targetRuntimeMs: Int,
-                              isAdaptive: Boolean
-                            ) extends SparkListener {
+class EllisScaleOutListener(sparkConf: SparkConf) extends SparkListener {
+  private val logger: Logger = Logger.getLogger(classOf[StageScaleOutPredictor])
+  logger.info("Initializing Ellis listener")
+  private var sparkContext: SparkContext = _
+  private val appSignature: String = sparkConf.get("spark.app.name")
+  check_configurations()
+  private val dbPath: String = sparkConf.get("spark.extraListeners.ellis.dbPath")
+  private val minExecutors: Int = sparkConf.get("spark.extraListeners.ellis.minExecutors").toInt
+  private val maxExecutors: Int = sparkConf.get("spark.extraListeners.ellis.maxExecutors").toInt
+  private val targetRuntimeMs: Int = sparkConf.get("spark.extraListeners.ellis.targetRuntimems").toInt
+  private val isAdaptive: Boolean = sparkConf.getBoolean("spark.extraListeners.ellis.isAdaptive",true)
 
   private var appEventId: Long = _
   private var appStartTime: Long = _
@@ -27,16 +30,33 @@ class StageScaleOutPredictor(
   private var scaleOut: Int = _
   private var nextScaleOut: Int = _
 
-  private val logger: Logger = Logger.getLogger(classOf[StageScaleOutPredictor])
 
   Class.forName("org.h2.Driver")
   ConnectionPool.singleton(s"jdbc:h2:$dbPath", "sa", "")
 
-  scaleOut = computeInitialScaleOut()
-  nextScaleOut = scaleOut
-  logger.info(s"Using initial scale-out of $scaleOut.")
 
-  sparkContext.requestTotalExecutors(scaleOut, 0, Map[String,Int]())
+
+  def init(): Unit ={
+    scaleOut = computeInitialScaleOut()
+    nextScaleOut = scaleOut
+    logger.info(s"Using initial scale-out of $scaleOut.")
+    sparkContext = SparkContext.getOrCreate(sparkConf)
+    sparkContext.requestTotalExecutors(scaleOut, 0, Map[String,Int]())
+  }
+
+  def check_configurations(){
+    /**
+     * check parameters are set in environment
+     */
+    val parametersList = List("spark.extraListeners.ellis.dbPath", "spark.extraListeners.ellis.minExecutors",
+      "spark.extraListeners.ellis.maxExecutors", "spark.extraListeners.ellis.targetRuntimems")
+    logger.info("Current spark conf" + sparkConf.toDebugString)
+    for (param <- parametersList) {
+      if (!sparkConf.contains(param)) {
+        throw new IllegalArgumentException("parameter " + param + " is not shown in the Environment!")
+      }
+    }
+  }
 
   def computeInitialScaleOut(): Int = {
     val (scaleOuts, runtimes) = getNonAdaptiveRuns
@@ -143,7 +163,7 @@ class StageScaleOutPredictor(
     val xPredict = DenseVector(predictedScaleOuts)
 
     // subdivide the scaleout range into interpolation and extrapolation
-//    val interpolationMask: BitVector = (xPredict :>= min(scaleOuts)) :& (xPredict :<= max(scaleOuts))
+    //    val interpolationMask: BitVector = (xPredict :>= min(scaleOuts)) :& (xPredict :<= max(scaleOuts))
     val interpolationMask: BitVector = (xPredict >:= min(scaleOuts)) &:& (xPredict <:= max(scaleOuts))
     val xPredictInterpolation = xPredict(interpolationMask).toDenseVector
     val xPredictExtrapolation = xPredict(!interpolationMask).toDenseVector
@@ -173,6 +193,7 @@ class StageScaleOutPredictor(
     yPredict.map(_.toInt).toArray
   }
 
+
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
     DB localTx { implicit session =>
@@ -188,6 +209,10 @@ class StageScaleOutPredictor(
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
     logger.info(s"Job ${jobStart.jobId} started.")
     jobStartTime = jobStart.time
+    if( jobStart.jobId == 0){
+      logger.info("Initializing Ellis listener on first job.")
+      init()
+    }
 
     // https://stackoverflow.com/questions/29169981/why-is-sparklistenerapplicationstart-never-fired
     // onApplicationStart workaround
@@ -215,6 +240,8 @@ class StageScaleOutPredictor(
     jobEndTime = jobEnd.time
     val jobDuration = jobEndTime - jobStartTime
     logger.info(s"Job ${jobEnd.jobId} finished in $jobDuration ms with $scaleOut nodes.")
+
+
 
     DB localTx { implicit session =>
       sql"""
