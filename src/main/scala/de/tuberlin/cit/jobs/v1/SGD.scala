@@ -1,4 +1,4 @@
-//package de.tuberlin.cit.jobs
+//package de.tuberlin.cit.jobs.v1
 //
 //import de.tuberlin.cit.adjustments.StageScaleOutPredictor
 //import org.apache.spark.mllib.optimization.SquaredL2Updater

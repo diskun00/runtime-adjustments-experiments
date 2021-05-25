@@ -1,17 +1,17 @@
-package de.tuberlin.cit.jobs
+package de.tuberlin.cit.jobs.v1
 
 import de.tuberlin.cit.adjustments.StageScaleOutPredictor
+import org.apache.spark.graphx.{Graph, VertexId}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.graphx.GraphLoader
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-object PageRank {
+object ConnectedComponents {
+  def main(args: Array[String]): Unit = {
 
-  def main(args: Array[String]) {
-
-    val conf = new PageRankArgs(args)
-    val appSignature = "PageRank"
+    val conf = new ConnectedComponentsArgs(args)
+    val appSignature = "CC"
 
     val sparkConf = new SparkConf()
       .setAppName(appSignature)
@@ -26,16 +26,27 @@ object PageRank {
       conf.adaptive())
     sparkContext.addSparkListener(listener)
 
-    val graph = GraphLoader.edgeListFile(sparkContext, conf.input())
-    val pr = graph.staticPageRank(conf.iterations())
+    sparkContext.textFile(conf.input())
+    val data = sparkContext.textFile(conf.input())
+    val edges: RDD[(VertexId, VertexId)] = data.map(s => {
+      val arr = s.split("\\s").map(_.toLong)
+      (arr(0), arr(1))
+    })
+    val graph: Graph[Int, Int] = Graph.fromEdgeTuples(edges, 1).cache()
+    val result: Graph[VertexId, Int] = graph.connectedComponents(conf.iterations())
 
-    pr.vertices.saveAsTextFile(conf.output())
-
+    val largestComponentSize = result.vertices
+      .map(_.swap)
+      .mapValues(_ => 1L)
+      .reduceByKey(_ + _)
+      .sortBy(_._2, ascending = false)
+      .first()
+      ._2
+    println(s"Largest component size: $largestComponentSize")
   }
-
 }
 
-class PageRankArgs(a: Seq[String]) extends ScallopConf(a) {
+class ConnectedComponentsArgs(a: Seq[String]) extends ScallopConf(a) {
   //  val config = opt[String](required = true,
   //    descr = "Path to the .conf file")
   //
@@ -43,8 +54,6 @@ class PageRankArgs(a: Seq[String]) extends ScallopConf(a) {
     default = Some("./target/bell"))
   val input: ScallopOption[String] = trailArg[String](required = true, name = "<input>",
     descr = "Input file").map(_.toLowerCase)
-  val output: ScallopOption[String] = trailArg[String](required = true, name = "<output>",
-    descr = "Output file").map(_.toLowerCase)
   val maxRuntime: ScallopOption[Int] = opt[Int](required = true, short = 'r',
     descr = "Maximum runtime in milliseconds")
   val minContainers: ScallopOption[Int] = opt[Int](short = 'n', default = Option(1),
@@ -70,3 +79,4 @@ class PageRankArgs(a: Seq[String]) extends ScallopConf(a) {
 
   verify()
 }
+

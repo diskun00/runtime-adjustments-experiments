@@ -1,18 +1,23 @@
-package de.tuberlin.cit.jobs
+/*
+ * KMeans workload for BigDataBench
+ */
+package de.tuberlin.cit.jobs.v1
 
 import de.tuberlin.cit.adjustments.StageScaleOutPredictor
-import org.apache.spark.graphx.{Graph, VertexId}
-import org.apache.spark.rdd.RDD
+import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-object ConnectedComponents {
+object KMeans {
+  val MLLibKMeans = org.apache.spark.mllib.clustering.KMeans
+
   def main(args: Array[String]): Unit = {
 
-    val conf = new ConnectedComponentsArgs(args)
-    val appSignature = "CC"
+    val conf = new KMeansArgs(args)
+    val appSignature = "KMeans"
 
+    var splits = 2
     val sparkConf = new SparkConf()
       .setAppName(appSignature)
     val sparkContext = new SparkContext(sparkConf)
@@ -22,31 +27,39 @@ object ConnectedComponents {
       conf.dbPath(),
       conf.minContainers(),
       conf.maxContainers(),
-      conf.maxRuntime(),
+      conf.maxRuntime().toInt,
       conf.adaptive())
     sparkContext.addSparkListener(listener)
 
-    sparkContext.textFile(conf.input())
-    val data = sparkContext.textFile(conf.input())
-    val edges: RDD[(VertexId, VertexId)] = data.map(s => {
-      val arr = s.split("\\s").map(_.toLong)
-      (arr(0), arr(1))
-    })
-    val graph: Graph[Int, Int] = Graph.fromEdgeTuples(edges, 1).cache()
-    val result: Graph[VertexId, Int] = graph.connectedComponents(conf.iterations())
+//    val filename = args(0)
+//    val k = args(1).toInt
+//    val iterations = args(2).toInt
+    // val save_file = args(4)
+    //if (args.length > 5) splits = args(5).toInt
+//    if (args.length > 3) splits = args(3).toInt
 
-    val largestComponentSize = result.vertices
-      .map(_.swap)
-      .mapValues(_ => 1L)
-      .reduceByKey(_ + _)
-      .sortBy(_._2, ascending = false)
-      .first()
-      ._2
-    println(s"Largest component size: $largestComponentSize")
+    println("Start KMeans training...")
+    // Load and parse the data
+    val data = sparkContext.textFile(conf.input(), splits)
+    val parsedData = data.map(s => Vectors.dense(s.split(' ').map(_.toDouble)))
+
+    val clusters = new org.apache.spark.mllib.clustering.KMeans()
+      .setEpsilon(0)
+      .setK(conf.k())
+      .setMaxIterations(conf.iterations())
+      .run(parsedData)
+//    val clusters = MLLibKMeans.train(parsedData, conf.k(), conf.iterations())
+
+    // Evaluate clustering by computing Within Set Sum of Squared Errors
+    val WSSSE = clusters.computeCost(parsedData)
+    println("Within Set Sum of Squared Errors = " + WSSSE)
+
+    clusters.clusterCenters.foreach(v => {
+      println(v)
+    })
   }
 }
-
-class ConnectedComponentsArgs(a: Seq[String]) extends ScallopConf(a) {
+class KMeansArgs(a: Seq[String]) extends ScallopConf(a) {
   //  val config = opt[String](required = true,
   //    descr = "Path to the .conf file")
   //
@@ -54,15 +67,16 @@ class ConnectedComponentsArgs(a: Seq[String]) extends ScallopConf(a) {
     default = Some("./target/bell"))
   val input: ScallopOption[String] = trailArg[String](required = true, name = "<input>",
     descr = "Input file").map(_.toLowerCase)
-  val maxRuntime: ScallopOption[Int] = opt[Int](required = true, short = 'r',
-    descr = "Maximum runtime in milliseconds")
+  val maxRuntime: ScallopOption[Double] = opt[Double](required = true, short = 'r',
+    descr = "Maximum runtime in seconds")
   val minContainers: ScallopOption[Int] = opt[Int](short = 'n', default = Option(1),
     descr = "Minimum number of containers to assign")
   val maxContainers: ScallopOption[Int] = opt[Int](required = true, short = 'N',
     descr = "Maximum number of containers to assign")
 
+  val k: ScallopOption[Int] = opt[Int](required = true, descr = "Amount of clusters")
   val iterations: ScallopOption[Int] = opt[Int](noshort = true, default = Option(100),
-    descr = "Amount of iterations")
+    descr = "Amount of KMeans iterations")
   val cache: ScallopOption[Boolean] = opt[Boolean](noshort = true, default = Option(false),
     descr = "Caches the input data")
   val adaptive: ScallopOption[Boolean] = opt[Boolean](default = Option(false), noshort = true,
