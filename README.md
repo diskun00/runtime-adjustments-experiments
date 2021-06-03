@@ -14,3 +14,11 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
     The entry class is `de.tuberlin.cit.adjustments.EllisScaleOutListener`
     
     You can either set it as an additional listener in Spark (which can be transparent to users), or you can explicitly create it in your Spark applications.
+
+* Dataset Generator
+
+  The generators are in `de.tuberlin.cit.datagens`.  
+
+* Workload
+    
+  Workloads are located in `de.tuberlin.cit.jobs.v2`.

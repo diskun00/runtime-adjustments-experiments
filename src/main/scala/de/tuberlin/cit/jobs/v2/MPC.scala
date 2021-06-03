@@ -6,7 +6,7 @@ import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{LabeledPoint => NewLabeledPoint}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.SparkConf
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
@@ -28,13 +28,7 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-
-//    val data = MLUtils.loadLabeledPoints(spark.sparkContext, conf.input()).map(lp => {
-//      NewLabeledPoint(lp.label, lp.features.asML)
-//    }).toDF()
-
-//  todo change min partitions
-    val data = spark.sparkContext.textFile(conf.input(), 2).map(s => {
+    val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')
       val (labelStr, featuresArr) = parts.splitAt(1)
       val label = java.lang.Double.parseDouble(labelStr(0))
@@ -42,8 +36,8 @@ object MPC {
       LabeledPoint(label, features)
     })
       .map(lp => {
-      NewLabeledPoint(lp.label, lp.features.asML)
-    })
+        NewLabeledPoint(lp.label, lp.features.asML)
+      })
       .toDF()
 
 

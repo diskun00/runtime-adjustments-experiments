@@ -31,7 +31,6 @@ object KMeans {
       .setK(conf.k())
       .setMaxIterations(conf.iterations())
       .run(parsedData)
-//    val clusters = MLLibKMeans.train(parsedData, conf.k(), conf.iterations())
 
     // Evaluate clustering by computing Within Set Sum of Squared Errors
     val WSSSE = clusters.computeCost(parsedData)
