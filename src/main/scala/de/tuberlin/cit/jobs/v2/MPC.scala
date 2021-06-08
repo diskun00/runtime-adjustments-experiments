@@ -49,7 +49,9 @@ object MPC {
     // specify layers for the neural network:
     // input layer of size 4 (features), two intermediate of size 5 and 4
     // and output of size 3 (classes)
-    val layers = Array[Int](4, 100, 50, 3)
+    val input_dimension = conf.input_dimension()
+    val output_dimension = conf.output_size()
+    val layers = Array[Int](input_dimension, 100, 50, output_dimension)
 
     // create the trainer and set its parameters
     val trainer = new MultilayerPerceptronClassifier()
@@ -83,6 +85,10 @@ class MPCArgs(a: Seq[String]) extends ScallopConf(a) {
     descr = "Input file").map(_.toLowerCase)
   val iterations: ScallopOption[Int] = opt[Int](noshort = true, default = Option(100),
     descr = "Amount of SGD iterations")
+  val input_dimension: ScallopOption[Int] = opt[Int](noshort = true, default = Option(200),
+    descr = "Dimension of input")
+  val output_size: ScallopOption[Int] = opt[Int](noshort = true, default = Option(3),
+    descr = "Size of output")
 
   override def onError(e: Throwable): Unit = e match {
     case ScallopException(message) =>
