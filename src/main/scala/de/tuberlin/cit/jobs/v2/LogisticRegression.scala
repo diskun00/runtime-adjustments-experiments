@@ -53,6 +53,7 @@ object LogisticRegression {
     val metrics = new MulticlassMetrics(predictionAndLabels)
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
+    sparkContext.stop()
   }
 }
 

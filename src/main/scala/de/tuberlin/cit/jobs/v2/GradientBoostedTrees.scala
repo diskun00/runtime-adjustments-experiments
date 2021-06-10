@@ -45,6 +45,7 @@ object GradientBoostedTrees {
     val testErr = labelAndPreds.filter(r => r._1 != r._2).count.toDouble / testData.count()
     println("Test Error = " + testErr)
     println("Learned classification GBT model:\n" + model.toDebugString)
+    sparkContext.stop()
 
   }
 }

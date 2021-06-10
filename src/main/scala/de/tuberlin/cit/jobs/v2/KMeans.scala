@@ -39,6 +39,8 @@ object KMeans {
     clusters.clusterCenters.foreach(v => {
       println(v)
     })
+    sparkContext.stop()
+
   }
 }
 
