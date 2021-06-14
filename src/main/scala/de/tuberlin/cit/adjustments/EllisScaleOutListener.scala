@@ -41,7 +41,9 @@ class EllisScaleOutListener(sparkConf: SparkConf) extends SparkListener {
     nextScaleOut = scaleOut
     logger.info(s"Using initial scale-out of $scaleOut.")
     sparkContext = SparkContext.getOrCreate(sparkConf)
-    sparkContext.requestTotalExecutors(scaleOut, 0, Map[String,Int]())
+    val requestResult = sparkContext.requestTotalExecutors(scaleOut, 0, Map[String, Int]())
+    logger.info("Change scaling result: " + requestResult.toString)
+
   }
 
   def check_configurations(){
