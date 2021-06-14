@@ -344,7 +344,8 @@ class EllisScaleOutListener(sparkConf: SparkConf) extends SparkListener {
 
       if (nextScaleOut != scaleOut) {
         logger.info(s"Adjusting scale-out to $nextScaleOut after job $nextJobId.")
-        sparkContext.requestTotalExecutors(nextScaleOut, 0, Map[String,Int]())
+        val requestResult = sparkContext.requestTotalExecutors(scaleOut, 0, Map[String, Int]())
+        logger.info("Change scaling result: " + requestResult.toString)
         this.nextScaleOut = nextScaleOut
       }
 
@@ -358,7 +359,8 @@ class EllisScaleOutListener(sparkConf: SparkConf) extends SparkListener {
 
       if (nextScaleOut < scaleOut) {
         logger.info(s"Adjusting scale-out to $nextScaleOut after job $nextJobId.")
-        sparkContext.requestTotalExecutors(nextScaleOut, 0, Map[String,Int]())
+        val requestResult = sparkContext.requestTotalExecutors(scaleOut, 0, Map[String, Int]())
+        logger.info("Change scaling result: " + requestResult.toString)
         this.nextScaleOut = nextScaleOut
       }
 
