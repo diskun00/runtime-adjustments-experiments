@@ -24,7 +24,7 @@ object LogisticRegression {
     val listener = new StageScaleOutPredictor(
       sparkContext,
       appSignature,
-      "tcp://wally036.cit.tu-berlin.de:9092",
+      "tcp://wally036.cit.tu-berlin.de:9092/~/ellis-logistic-regression-trivial",
       4,
       40,
       3000,
