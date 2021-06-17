@@ -146,6 +146,11 @@
                         <goals>
                             <goal>compile</goal>
                         </goals>
+                        <configuration>
+                            <args>
+                                <arg>-no-specialization</arg>
+                            </args>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>scala-test-compile</id>
