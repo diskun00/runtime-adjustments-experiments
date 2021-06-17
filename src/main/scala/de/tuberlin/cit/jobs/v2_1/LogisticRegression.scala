@@ -1,13 +1,14 @@
 package de.tuberlin.cit.jobs.v2_1
 
-import de.tuberlin.cit.adjustments.StageScaleOutPredictor
+import de.tuberlin.cit.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.mllib.classification.LogisticRegressionWithLBFGS
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
+import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.regression.LabeledPoint
 
 
 object LogisticRegression {
@@ -21,14 +22,22 @@ object LogisticRegression {
       .setAppName(appSignature)
 
     val sparkContext = new SparkContext(sparkConf)
-    val listener = new StageScaleOutPredictor(
-      sparkContext,
-      appSignature,
-      "tcp://wally036.cit.tu-berlin.de:9092/~/ellis-logistic-regression-trivial",
-      4,
-      40,
-      3000,
-      false)
+
+    var listener: SparkListener = null
+    if(sparkConf.contains("spark.customExtraListener.method")){
+      val method: String = sparkConf.get("spark.customExtraListener.method")
+      if(method.equals("enel")){
+        listener = new EnelScaleOutListener(sparkContext, sparkConf)
+      }
+      else if(method.equals("ellis")){
+        listener = new EllisScaleOutListener(sparkContext, sparkConf)
+      }
+    }
+
+    if(listener == null){
+      throw new IllegalArgumentException("No listener initialized!")
+    }
+
     sparkContext.addSparkListener(listener)
 
     var data = sparkContext.textFile(conf.input(), sparkContext.defaultMinPartitions).map(s => {

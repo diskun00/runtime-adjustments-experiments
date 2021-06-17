@@ -3,7 +3,6 @@ package de.tuberlin.cit.prediction
 import org.scalatest.FlatSpec
 
 import scala.math._
-import scala.util.Random
 
 class KernelRegressionSpec extends FlatSpec {
 
