@@ -2,7 +2,7 @@ package de.tuberlin.cit.adjustments
 
 import breeze.linalg._
 import de.tuberlin.cit.prediction.{Bell, Ernest, UnivariatePredictor}
-import py4j.GatewayServer
+import org.apache.log4j.Logger
 import scalikejdbc._
 
 import scala.language.postfixOps
@@ -144,9 +144,9 @@ object EllisUtils {
   }
 }
 
-
 class EllisApplication() {
 
+  private val logger: Logger = Logger.getLogger(classOf[EllisApplication])
   private var dbPathApp: String = _
 
   def init(dbPath: String): Unit ={
@@ -157,16 +157,11 @@ class EllisApplication() {
 
   def computeInitialScaleOut(dbPath: String,
                              appSignature: String, minExecutors: Int, maxExecutors: Int, targetRuntimeMs: Int): Int = {
+    logger.info(s"New request: ${dbPath}, ${appSignature}, ${minExecutors}, ${maxExecutors}, ${targetRuntimeMs}")
     if(dbPathApp != dbPath){
       init(dbPath)
     }
 
     EllisUtils.computeInitialScaleOut(appSignature, minExecutors, maxExecutors, targetRuntimeMs)
-  }
-
-  def main(args: Array[String]): Unit = {
-    val app: EllisApplication = new EllisApplication()
-    val server: GatewayServer = new GatewayServer(app)
-    server.start()
   }
 }
