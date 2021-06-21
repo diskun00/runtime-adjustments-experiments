@@ -164,7 +164,7 @@ class EllisApplication() {
       started_at TIMESTAMP NOT NULL,
       finished_at TIMESTAMP,
       UNIQUE (app_id, started_at));
-      """.execute()
+      """.execute.apply()
 
       sql"""
       CREATE TABLE IF NOT EXISTS job_event (
@@ -176,7 +176,7 @@ class EllisApplication() {
       scale_out INT NOT NULL,
       PRIMARY KEY (app_event_id, job_id),
       FOREIGN KEY (app_event_id) REFERENCES app_event (id));
-      """.execute()
+      """.execute.apply()
     }
   }
 
