@@ -3,15 +3,17 @@ package de.tuberlin.cit.adjustments
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.scheduler._
 import org.json4s.DefaultFormats
-import org.json4s.native.Serialization
+import org.json4s.native.{Json, Serialization}
 import sttp.client3._
-import sttp.client3.json4s.asJson
+import sttp.client3.json4s._
 import org.apache.log4j.Logger
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.storage.RDDInfo
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.duration.DurationInt
+import scala.util.Try
+
 
 class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) extends SparkListener {
 
@@ -45,12 +47,28 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   private val initialExecutors: Int = sparkConf.get("spark.customExtraListener.initialExecutors").toInt
   logger.info(s"Using initial scale-out of $initialExecutors.")
 
+  // for json4s
+  implicit val serialization: Serialization.type = org.json4s.native.Serialization
+  implicit val formats: DefaultFormats.type = org.json4s.DefaultFormats
+
   def getExecutorCount: Int = {
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
   }
 
   def proceed(): Boolean = {
     !isAdaptive || (isAdaptive && method.equals("enel"))
+  }
+
+  def saveDivision(a: Int, b: Int): Double = {
+    Try(a / b).getOrElse(0).toDouble
+  }
+
+  def saveDivision(a: Long, b: Long): Double = {
+    Try(a / b).getOrElse(0L).toDouble
+  }
+
+  def saveDivision(a: Double, b: Double): Double = {
+    Try(a / b).getOrElse(0.0)
   }
 
   def checkConfigurations(){
@@ -69,16 +87,26 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   def updateInformation(applicationId: Option[String], updateMap: Map[String, String], updateEvent: String): Unit = {
+    case class RequestPayload(application_execution_id: String,
+                              application_id: Option[String],
+                              job_id: Option[Int],
+                              update_event: String,
+                              updates: String)
+
     val backend = HttpURLConnectionBackend()
+
     try {
+      val payload: RequestPayload = RequestPayload(
+        applicationExecutionId,
+        applicationId,
+        null,
+        updateEvent,
+        Json(DefaultFormats).write(updateMap))
+
       basicRequest
         .post(uri"http://$service:$port/$updateInformationEndpoint")
-        .body(Map(
-          "application_execution_id" -> applicationExecutionId,
-          "application_id" -> applicationId.orNull,
-          "job_id" -> null,
-          "update_event" -> updateEvent,
-          "updates" -> updateMap.toString()))
+        .contentType("application/json")
+        .body(payload)
         .response(ignore)
         .send(backend)
     } finally backend.close()
@@ -86,13 +114,13 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def computeRescalingTimeRatio(startTime: Long, endTime: Long, startScaleOut: Int, endScaleOut: Int): Double = {
 
-    scaleOutBuffer
+    val dividend: Long = scaleOutBuffer
       .filter(e => e._1 != startScaleOut || e._1 != endScaleOut)
       .filter(e => e._2 + e._3 >= startTime && e._2 <= endTime)
       .map(e => {
         val startTimeScaleOut: Long = e._2
         var endTimeScaleOut: Long = e._2 + e._3
-        if(e._3 == 0L)
+        if (e._3 == 0L)
           endTimeScaleOut = endTime
 
         val intervalStartTime: Long = Math.min(Math.max(startTime, startTimeScaleOut), endTime)
@@ -100,7 +128,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
         intervalEndTime - intervalStartTime
       })
-      .sum / (endTime - startTime)
+      .sum
+
+    saveDivision(dividend, endTime - startTime)
   }
 
   def extractFromRDD(seq: Seq[RDDInfo]): (Int, Int, Long, Long) = {
@@ -119,12 +149,12 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def extractFromTaskMetrics(taskMetrics: TaskMetrics): (Double, Double, Double, Double, Double) =  {
     // cpu time is nanoseconds, run time is milliseconds
-    val cpuUtilization: Double = taskMetrics.executorCpuTime / (taskMetrics.executorRunTime * 1000000)
-    val gcTimeRatio: Double = taskMetrics.jvmGCTime / taskMetrics.executorRunTime
-    val shuffleReadWriteRatio: Double = taskMetrics.shuffleReadMetrics.totalBytesRead /
-      taskMetrics.shuffleWriteMetrics.bytesWritten
-    val inputOutputRatio: Double = taskMetrics.inputMetrics.bytesRead / taskMetrics.outputMetrics.bytesWritten
-    val memorySpillRatio: Double = taskMetrics.diskBytesSpilled / taskMetrics.peakExecutionMemory
+    val cpuUtilization: Double = saveDivision(taskMetrics.executorCpuTime, (taskMetrics.executorRunTime * 1000000))
+    val gcTimeRatio: Double = saveDivision(taskMetrics.jvmGCTime, taskMetrics.executorRunTime)
+    val shuffleReadWriteRatio: Double = saveDivision(taskMetrics.shuffleReadMetrics.totalBytesRead,
+      taskMetrics.shuffleWriteMetrics.bytesWritten)
+    val inputOutputRatio: Double = saveDivision(taskMetrics.inputMetrics.bytesRead, taskMetrics.outputMetrics.bytesWritten)
+    val memorySpillRatio: Double = saveDivision(taskMetrics.diskBytesSpilled, taskMetrics.peakExecutionMemory)
     Tuple5(cpuUtilization, gcTimeRatio, shuffleReadWriteRatio, inputOutputRatio, memorySpillRatio)
   }
 
@@ -215,8 +245,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "end_time" -> jobEnd.time.toString,
       "end_scale_out" -> endScaleOut.toString,
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
-      "stages" -> infoMap(mapKey)("stages").split(",")
-        .map(si => f"${si}" -> infoMap(f"${applicationId}-${jobId}-${si}")).toMap.toString()
+      "stages" -> Json(DefaultFormats).write(
+        infoMap(mapKey)("stages").split(",")
+        .map(si => f"${si}" ->  infoMap(f"${applicationId}-${jobId}-${si}"))
+      )
     ))
 
     // remove all already "finished" transitions
@@ -276,13 +308,13 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "end_scale_out" -> endScaleOut.toString,
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
       "failure_reason" -> stageInfo.failureReason.getOrElse(""),
-      "metrics" -> scala.collection.mutable.Map[String, Double](
+      "metrics" -> Json(DefaultFormats).write(scala.collection.mutable.Map[String, Double](
         "cpu_utilization" -> metricsInfo._1,
         "gc_time_ratio" -> metricsInfo._2,
         "shuffle_rw_ratio" -> metricsInfo._3,
         "data_io_ratio" -> metricsInfo._4,
         "memory_spill_ratio" -> metricsInfo._5
-      ).toString()
+      ))
     ))
   }
 
@@ -292,24 +324,29 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
                                best_predicted_runtime: Long,
                                do_rescale: Boolean)
 
-    implicit val serialization: Serialization.type = org.json4s.native.Serialization
-    implicit val formats: DefaultFormats.type = org.json4s.DefaultFormats
+    case class RequestPayload(application_execution_id: String,
+                              application_id: String,
+                              job_id: Int,
+                              update_event: String,
+                              updates: String,
+                              predict: Boolean)
 
     val backend = HttpURLConnectionBackend()
 
     val mapKey: String = f"${applicationId}-${jobId}"
-
     try {
+      val payload: RequestPayload = RequestPayload(
+        applicationExecutionId,
+        applicationId,
+        jobId,
+        "JOB_END",
+        Json(DefaultFormats).write(infoMap(mapKey)),
+        isAdaptive && method.equals("enel") && !reconfigurationRunning)
+
       val response = basicRequest
         .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
-        .body(Map(
-          "application_execution_id" -> applicationExecutionId,
-          "application_id" -> applicationId,
-          "job_id" -> jobId.toString,
-          "update_event" -> "JOB_END",
-          "updates" -> infoMap(mapKey).toString(),
-          "predict" -> (isAdaptive && method.equals("enel") && !reconfigurationRunning).toString
-        ))
+        .contentType("application/json")
+        .body(payload)
         .readTimeout(restTimeout.seconds)
         .response(asJson[ResponsePayload])
         .send(backend)
