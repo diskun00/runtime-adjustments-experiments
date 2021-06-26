@@ -188,6 +188,9 @@ class EllisApplication() {
     }
     createTables()
 
-    EllisUtils.computeInitialScaleOut(appSignature, minExecutors, maxExecutors, targetRuntimeMs)
+    val scaleOut: Int = EllisUtils.computeInitialScaleOut(appSignature, minExecutors, maxExecutors, targetRuntimeMs)
+    logger.info(s"Initial scale-out recommendation: ${scaleOut}")
+
+    scaleOut
   }
 }
