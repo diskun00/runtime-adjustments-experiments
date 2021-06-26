@@ -1,14 +1,13 @@
 package de.tuberlin.cit.jobs.v2_1
 
 import de.tuberlin.cit.jobs.JobUtils
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.SparkConf
 import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.ml.feature.{LabeledPoint => NewLabeledPoint}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.SparkConf
-import org.apache.spark.scheduler.SparkListener
+import org.apache.spark.sql.SparkSession
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
@@ -30,8 +29,7 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-    val listener: SparkListener = JobUtils.handleMethod(spark.sparkContext, sparkConf)
-    spark.sparkContext.addSparkListener(listener)
+    JobUtils.addCustomListeners(spark.sparkContext, sparkConf)
 
     val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')

@@ -19,6 +19,7 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
   private val maxExecutors: Int = sparkConf.get("spark.customExtraListener.maxExecutors").toInt
   private val targetRuntimeMs: Int = sparkConf.get("spark.customExtraListener.targetRuntimems").toInt
   private val isAdaptive: Boolean = sparkConf.getBoolean("spark.customExtraListener.isAdaptive",defaultValue = true)
+  private val method: String = sparkConf.get("spark.customExtraListener.method")
 
   private var appEventId: Long = _
   private var appStartTime: Long = _
@@ -37,6 +38,10 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
   nextScaleOut = scaleOut
   logger.info(s"Using initial scale-out of $scaleOut.")
 
+  def proceed(): Boolean = {
+    !isAdaptive || (isAdaptive && method.equals("ellis"))
+  }
+
 
   def checkConfigurations(){
     /**
@@ -44,7 +49,7 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
      */
     val parametersList = List("spark.customExtraListener.dbPath", "spark.customExtraListener.minExecutors",
       "spark.customExtraListener.initialExecutors", "spark.customExtraListener.maxExecutors",
-      "spark.customExtraListener.targetRuntimems")
+      "spark.customExtraListener.targetRuntimems", "spark.customExtraListener.method")
     logger.info("Current spark conf" + sparkConf.toDebugString)
     for (param <- parametersList) {
       if (!sparkConf.contains(param)) {
@@ -55,17 +60,23 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
+    if(!proceed())
+      ()
+
     DB localTx { implicit session =>
       sql"""
-      UPDATE app_event
-      SET finished_at = ${new Date(applicationEnd.time)}
-      WHERE id = ${appEventId};
-      """.update().apply()
+    UPDATE app_event
+    SET finished_at = ${new Date(applicationEnd.time)}
+    WHERE id = ${appEventId};
+    """.update().apply()
     }
-
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Job ${jobStart.jobId} started.")
     jobStartTime = jobStart.time
 
@@ -77,51 +88,54 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
       DB localTx { implicit session =>
         appEventId =
           sql"""
-        INSERT INTO app_event (
-          app_id,
-          started_at
-        )
-        VALUES (
-          ${appSignature},
-          ${new Date(appStartTime)}
-        );
-        """.updateAndReturnGeneratedKey("id").apply()
+      INSERT INTO app_event (
+        app_id,
+        started_at
+      )
+      VALUES (
+        ${appSignature},
+        ${new Date(appStartTime)}
+      );
+      """.updateAndReturnGeneratedKey("id").apply()
       }
     }
-
   }
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
+
+    if(!proceed())
+      ()
+
     jobEndTime = jobEnd.time
     val jobDuration = jobEndTime - jobStartTime
     logger.info(s"Job ${jobEnd.jobId} finished in $jobDuration ms with $scaleOut nodes.")
 
     DB localTx { implicit session =>
       sql"""
-      INSERT INTO job_event (
-        app_event_id,
-        job_id,
-        started_at,
-        finished_at,
-        duration_ms,
-        scale_out
-      )
-      VALUES (
-        ${appEventId},
-        ${jobEnd.jobId},
-        ${new Date(jobStartTime)},
-        ${new Date(jobEndTime)},
-        ${jobDuration},
-        ${scaleOut}
-      );
-      """.update().apply()
+    INSERT INTO job_event (
+      app_event_id,
+      job_id,
+      started_at,
+      finished_at,
+      duration_ms,
+      scale_out
+    )
+    VALUES (
+      ${appEventId},
+      ${jobEnd.jobId},
+      ${new Date(jobStartTime)},
+      ${new Date(jobEndTime)},
+      ${jobDuration},
+      ${scaleOut}
+    );
+    """.update().apply()
     }
 
     if (nextScaleOut != scaleOut) {
       scaleOut = nextScaleOut
     }
 
-    if (isAdaptive) {
+    if (isAdaptive && method.equals("ellis")) {
       val (scaleOuts, runtimes) = EllisUtils.getNonAdaptiveRuns(appSignature)
       if (scaleOuts.length > 3) { // do not scale adaptively for the bootstrap runs
         updateScaleOut(jobEnd.jobId)

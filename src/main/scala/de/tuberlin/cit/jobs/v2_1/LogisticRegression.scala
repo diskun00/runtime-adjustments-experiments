@@ -5,7 +5,6 @@ import org.apache.spark.mllib.classification.LogisticRegressionWithLBFGS
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
@@ -23,8 +22,7 @@ object LogisticRegression {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val listener: SparkListener = JobUtils.handleMethod(sparkContext, sparkConf)
-    sparkContext.addSparkListener(listener)
+    JobUtils.addCustomListeners(sparkContext, sparkConf)
 
     var data = sparkContext.textFile(conf.input(), sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')

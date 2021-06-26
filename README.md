@@ -6,7 +6,7 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
 
 
 * Environment
-  - Spark: `v3.0.0`
+  - Spark: `v3.1.1`
   - Scala: `2.12.10`
     
 * Usage
@@ -21,4 +21,4 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
 
 * Workload
     
-  Workloads are located in `de.tuberlin.cit.jobs.v2`.
+  Workloads are located in `de.tuberlin.cit.jobs.v2_1`.

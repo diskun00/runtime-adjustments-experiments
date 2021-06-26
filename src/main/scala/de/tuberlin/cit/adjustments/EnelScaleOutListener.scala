@@ -10,6 +10,7 @@ import org.apache.log4j.Logger
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.storage.RDDInfo
 
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.duration.DurationInt
 
 class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) extends SparkListener {
@@ -26,18 +27,20 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   private val updateInformationEndpoint: String = sparkConf.get("spark.customExtraListener.updateInformationEndpoint")
   private val applicationExecutionId: String = sparkConf.get("spark.customExtraListener.applicationExecutionId")
   private val isAdaptive: Boolean = sparkConf.getBoolean("spark.customExtraListener.isAdaptive", defaultValue = true)
+  private val method: String = sparkConf.get("spark.customExtraListener.method")
 
   private var jobId: Int = _
 
   private var desiredScaleOut: Int = _
   private var currentScaleOut: Int = _
 
-  private var reconfigurationStartTime: Long = _
-  private var reconfigurationEndTime: Long = _
   private var reconfigurationRunning: Boolean = false
 
   private val infoMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, String]] =
     scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, String]]()
+
+  // scale-out, time of measurement, total time
+  private var scaleOutBuffer: ListBuffer[(Int, Long, Long)] = ListBuffer()
 
   private val initialExecutors: Int = sparkConf.get("spark.customExtraListener.initialExecutors").toInt
   logger.info(s"Using initial scale-out of $initialExecutors.")
@@ -46,13 +49,17 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
   }
 
+  def proceed(): Boolean = {
+    !isAdaptive || (isAdaptive && method.equals("enel"))
+  }
+
   def checkConfigurations(){
     /**
      * check parameters are set in environment
      */
     val parametersList = List("spark.customExtraListener.restTimeout", "spark.customExtraListener.service",
       "spark.customExtraListener.initialExecutors", "spark.customExtraListener.port", "spark.customExtraListener.onlineScaleOutPredictionEndpoint",
-      "spark.customExtraListener.updateInformationEndpoint", "spark.customExtraListener.applicationExecutionId")
+      "spark.customExtraListener.updateInformationEndpoint", "spark.customExtraListener.applicationExecutionId", "spark.customExtraListener.method")
     logger.info("Current spark conf" + sparkConf.toDebugString)
     for (param <- parametersList) {
       if (!sparkConf.contains(param)) {
@@ -77,12 +84,23 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     } finally backend.close()
   }
 
-  def computeOverhead(startTime: Long, endTime: Long): Double = {
-    val intervalStartTime: Long = Math.min(Math.max(startTime, reconfigurationStartTime), endTime)
-    val intervalEndTime: Long = Math.max(startTime, Math.min(endTime, reconfigurationEndTime))
-    val intervalLength: Long = intervalEndTime - intervalStartTime
+  def computeRescalingTimeRatio(startTime: Long, endTime: Long, startScaleOut: Int, endScaleOut: Int): Double = {
 
-    intervalLength / (endTime - startTime)
+    scaleOutBuffer
+      .filter(e => e._1 != startScaleOut || e._1 != endScaleOut)
+      .filter(e => e._2 + e._3 >= startTime && e._2 <= endTime)
+      .map(e => {
+        val startTimeScaleOut: Long = e._2
+        var endTimeScaleOut: Long = e._2 + e._3
+        if(e._3 == 0L)
+          endTimeScaleOut = endTime
+
+        val intervalStartTime: Long = Math.min(Math.max(startTime, startTimeScaleOut), endTime)
+        val intervalEndTime: Long = Math.max(startTime, Math.min(endTime, endTimeScaleOut))
+
+        intervalEndTime - intervalStartTime
+      })
+      .sum / (endTime - startTime)
   }
 
   def extractFromRDD(seq: Seq[RDDInfo]): (Int, Int, Long, Long) = {
@@ -111,14 +129,26 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
+
+    if(!proceed())
+      ()
+
     handleScaleOutMonitoring(executorAdded.time)
   }
 
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
+
+    if(!proceed())
+      ()
+
     handleScaleOutMonitoring(executorRemoved.time)
   }
 
   override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Application ${applicationStart.appId} started.")
 
     val updateMap: Map[String, String] = Map(
@@ -128,9 +158,14 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "start_time" -> applicationStart.time.toString
     )
     updateInformation(applicationStart.appId, updateMap, "APPLICATION_START")
+
   }
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Application ${applicationId} finished.")
 
     val updateMap: Map[String, String] = Map(
@@ -138,9 +173,14 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "end_scale_out" -> getExecutorCount.toString
     )
     updateInformation(Option(applicationId), updateMap, "APPLICATION_END")
+
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Job ${jobStart.jobId} started.")
     jobId = jobStart.jobId
 
@@ -155,23 +195,43 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Job ${jobEnd.jobId} finished.")
 
     val mapKey: String = f"${applicationId}-${jobId}"
-    val overhead: Double = computeOverhead(infoMap(mapKey)("start_time").toLong, jobEnd.time)
+
+    val endScaleOut = getExecutorCount
+    val rescalingTimeRatio: Double = computeRescalingTimeRatio(
+      infoMap(mapKey)("start_time").toLong,
+      jobEnd.time,
+      infoMap(mapKey)("start_scale_out").toInt,
+      endScaleOut
+    )
 
     infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, String](
       "end_time" -> jobEnd.time.toString,
-      "end_scale_out" -> getExecutorCount.toString,
-      "overhead" -> overhead.toString,
+      "end_scale_out" -> endScaleOut.toString,
+      "rescaling_time_ratio" -> rescalingTimeRatio.toString,
       "stages" -> infoMap(mapKey)("stages").split(",")
         .map(si => f"${si}" -> infoMap(f"${applicationId}-${jobId}-${si}")).toMap.toString()
     ))
+
+    // remove all already "finished" transitions
+    scaleOutBuffer = scaleOutBuffer.filter(_._3 == 0L)
+
     handleUpdateScaleOut()
   }
 
   override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Stage ${stageSubmitted.stageInfo.stageId} submitted.")
+
     val stageInfo: StageInfo = stageSubmitted.stageInfo
     val rddInfo: (Int, Int, Long, Long) = extractFromRDD(stageInfo.rddInfos)
 
@@ -191,20 +251,30 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
+
+    if(!proceed())
+      ()
+
     logger.info(s"Stage ${stageCompleted.stageInfo.stageId} completed.")
+
     val stageInfo: StageInfo = stageCompleted.stageInfo
     val metricsInfo: (Double, Double, Double, Double, Double) = extractFromTaskMetrics(stageInfo.taskMetrics)
 
     val mapKey: String = f"${applicationId}-${jobId}-${stageInfo.stageId}"
-    val overhead: Double = computeOverhead(
+
+    val endScaleOut = getExecutorCount
+    val rescalingTimeRatio: Double = computeRescalingTimeRatio(
       stageInfo.submissionTime.getOrElse(0L),
-      stageInfo.completionTime.getOrElse(0L))
+      stageInfo.completionTime.getOrElse(0L),
+      infoMap(mapKey)("start_scale_out").toInt,
+      endScaleOut
+    )
 
     infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, String](
       "attempt_id" -> stageInfo.attemptNumber().toString,
       "end_time" -> stageInfo.completionTime.toString,
-      "end_scale_out" -> getExecutorCount.toString,
-      "overhead" -> overhead.toString,
+      "end_scale_out" -> endScaleOut.toString,
+      "rescaling_time_ratio" -> rescalingTimeRatio.toString,
       "failure_reason" -> stageInfo.failureReason.getOrElse(""),
       "metrics" -> scala.collection.mutable.Map[String, Double](
         "cpu_utilization" -> metricsInfo._1,
@@ -238,7 +308,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
           "job_id" -> jobId.toString,
           "update_event" -> "JOB_END",
           "updates" -> infoMap(mapKey).toString(),
-          "predict" -> (isAdaptive && !reconfigurationRunning).toString
+          "predict" -> (isAdaptive && method.equals("enel") && !reconfigurationRunning).toString
         ))
         .readTimeout(restTimeout.seconds)
         .response(asJson[ResponsePayload])
@@ -248,8 +318,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       val doRescale: Boolean = response.body.right.get.do_rescale
 
       if(doRescale && bestScaleOut != currentScaleOut){
-        reconfigurationStartTime = 0L
-        reconfigurationEndTime = 0L
         reconfigurationRunning = true
 
         logger.info(s"Adjusting scale-out from $currentScaleOut to $bestScaleOut.")
@@ -265,13 +333,16 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   def handleScaleOutMonitoring(executorActionTime: Long): Unit = {
     currentScaleOut = getExecutorCount
     logger.info(s"Current number of executors: $currentScaleOut.")
-    if(reconfigurationRunning){
-      if(reconfigurationStartTime == 0){
-        reconfigurationStartTime = executorActionTime
-      }
 
+    if(scaleOutBuffer.nonEmpty){
+      val lastElement: (Int, Long, Long) = scaleOutBuffer.last
+      scaleOutBuffer(scaleOutBuffer.size - 1) = (lastElement._1, lastElement._2, executorActionTime - lastElement._2)
+    }
+
+    scaleOutBuffer.append((currentScaleOut, executorActionTime, 0L))
+
+    if(reconfigurationRunning){
       if(currentScaleOut == desiredScaleOut){
-        reconfigurationEndTime = executorActionTime
         reconfigurationRunning = false
       }
     }

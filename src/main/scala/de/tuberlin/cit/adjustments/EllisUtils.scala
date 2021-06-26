@@ -185,8 +185,8 @@ class EllisApplication() {
     logger.info(s"New request: ${dbPath}, ${appSignature}, ${minExecutors}, ${maxExecutors}, ${targetRuntimeMs}")
     if(dbPathApp != dbPath){
       init(dbPath)
-      createTables()
     }
+    createTables()
 
     EllisUtils.computeInitialScaleOut(appSignature, minExecutors, maxExecutors, targetRuntimeMs)
   }

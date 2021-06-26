@@ -3,7 +3,6 @@ package de.tuberlin.cit.jobs.v2_1
 import de.tuberlin.cit.jobs.JobUtils
 import org.apache.spark.mllib.tree.configuration.BoostingStrategy
 import org.apache.spark.mllib.util.MLUtils
-import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
@@ -19,8 +18,7 @@ object GradientBoostedTrees {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val listener: SparkListener = JobUtils.handleMethod(sparkContext, sparkConf)
-    sparkContext.addSparkListener(listener)
+    JobUtils.addCustomListeners(sparkContext, sparkConf)
 
     sparkContext.textFile(conf.input())
 

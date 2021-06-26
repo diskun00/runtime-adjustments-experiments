@@ -2,25 +2,13 @@ package de.tuberlin.cit.jobs
 
 import de.tuberlin.cit.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.scheduler.SparkListener
 
 object JobUtils {
-  def handleMethod(sparkContext: SparkContext, sparkConf: SparkConf): SparkListener ={
-    var listener: SparkListener = null
-    if(sparkConf.contains("spark.customExtraListener.method")){
-      val method: String = sparkConf.get("spark.customExtraListener.method")
-      if(method.equals("enel")){
-        listener = new EnelScaleOutListener(sparkContext, sparkConf)
-      }
-      else if(method.equals("ellis")){
-        listener = new EllisScaleOutListener(sparkContext, sparkConf)
-      }
-    }
+  def addCustomListeners(sparkContext: SparkContext, sparkConf: SparkConf): Unit ={
 
-    if(listener == null){
-      throw new IllegalArgumentException("No listener initialized!")
-    }
-
-    listener
+    print("About to add EllisScaleOutListener...")
+    sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    print("About to add EnelScaleOutListener...")
+    sparkContext.addSparkListener(new EnelScaleOutListener(sparkContext, sparkConf))
   }
 }
