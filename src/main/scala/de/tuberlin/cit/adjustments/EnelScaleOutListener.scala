@@ -72,7 +72,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val backend = HttpURLConnectionBackend()
     try {
       basicRequest
-        .post(uri"$service:$port/$updateInformationEndpoint")
+        .post(uri"http://$service:$port/$updateInformationEndpoint")
         .body(Map(
           "application_execution_id" -> applicationExecutionId,
           "application_id" -> applicationId.orNull,
@@ -301,7 +301,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     try {
       val response = basicRequest
-        .post(uri"$service:$port/$onlineScaleOutPredictionEndpoint")
+        .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
         .body(Map(
           "application_execution_id" -> applicationExecutionId,
           "application_id" -> applicationId,
