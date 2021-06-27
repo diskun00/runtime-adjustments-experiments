@@ -138,7 +138,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   def computeRescalingTimeRatio(startTime: Long, endTime: Long, startScaleOut: Int, endScaleOut: Int): Double = {
 
     val dividend: Long = scaleOutBuffer
-      .filter(e => e._1 != startScaleOut || e._1 != endScaleOut)
+      .filter(e => e._1 != startScaleOut && e._1 != endScaleOut)
       .filter(e => e._2 + e._3 >= startTime && e._2 <= endTime)
       .map(e => {
         val startTimeScaleOut: Long = e._2
