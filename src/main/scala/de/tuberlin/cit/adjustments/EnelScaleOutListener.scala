@@ -1,14 +1,14 @@
 package de.tuberlin.cit.adjustments
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.scheduler._
-import org.json4s.{DefaultFormats, FieldSerializer, Formats}
-import org.json4s.native.{Json, Serialization}
-import sttp.client3._
-import sttp.client3.json4s._
 import org.apache.log4j.Logger
 import org.apache.spark.executor.TaskMetrics
+import org.apache.spark.scheduler._
 import org.apache.spark.storage.RDDInfo
+import org.apache.spark.{SparkConf, SparkContext}
+import org.json4s.native.{Json, Serialization}
+import org.json4s.{DefaultFormats, FieldSerializer, Formats}
+import sttp.client3._
+import sttp.client3.json4s._
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.duration.DurationInt
@@ -81,15 +81,23 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   def saveDivision(a: Int, b: Int): Double = {
-    Try(a / b).getOrElse(0).toDouble
+    saveDivision(a.toDouble, b.toDouble)
   }
 
   def saveDivision(a: Long, b: Long): Double = {
-    Try(a / b).getOrElse(0L).toDouble
+    saveDivision(a.toDouble, b.toDouble)
   }
 
   def saveDivision(a: Double, b: Double): Double = {
-    Try(a / b).getOrElse(0.0)
+    if(a == 0.0){
+      0.0
+    }
+    else if(b == 0.0){
+      1.0
+    }
+    else{
+      Try(a / b).getOrElse(0.0)
+    }
   }
 
   def checkConfigurations(){
@@ -107,7 +115,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     }
   }
 
-  def updateInformation(applicationId: Option[String], updateMap: Map[String, String], updateEvent: String): Unit = {
+  def updateInformation(applicationId: Option[String], updateMap: Map[String, Any], updateEvent: String): Unit = {
 
     val backend = HttpURLConnectionBackend()
 
@@ -196,9 +204,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     logger.info(s"Application ${applicationId} finished.")
 
-    val updateMap: Map[String, String] = Map(
-      "end_time" -> applicationEnd.time.toString,
-      "end_scale_out" -> getExecutorCount.toString
+    val updateMap: Map[String, Any] = Map(
+      "end_time" -> applicationEnd.time,
+      "end_scale_out" -> getExecutorCount
     )
     updateInformation(Option(applicationId), updateMap, "APPLICATION_END")
 
@@ -214,11 +222,11 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     if(jobId == 0){
       logger.info(s"Application ${applicationId} started.")
 
-      val updateMap: Map[String, String] = Map(
+      val updateMap: Map[String, Any] = Map(
         "application_id" -> applicationId,
         "application_signature" -> applicationSignature,
         "attempt_id" -> sparkContext.applicationAttemptId.orNull,
-        "start_time" -> jobStart.time.toString
+        "start_time" -> jobStart.time
       )
       updateInformation(Option(applicationId), updateMap, "APPLICATION_START")
     }
@@ -229,9 +237,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
 
     infoMap(mapKey) = scala.collection.mutable.Map[String, Any](
-      "job_id" -> jobStart.jobId.toString,
-      "start_time" -> jobStart.time.toString,
-      "start_scale_out" -> getExecutorCount.toString,
+      "job_id" -> jobStart.jobId,
+      "start_time" -> jobStart.time,
+      "start_scale_out" -> getExecutorCount,
       "stages" -> jobStart.stageInfos.map(si => f"${si.stageId}").mkString(",")
     )
   }
@@ -254,9 +262,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     )
 
     infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, Any](
-      "end_time" -> jobEnd.time.toString,
-      "end_scale_out" -> endScaleOut.toString,
-      "rescaling_time_ratio" -> rescalingTimeRatio.toString,
+      "end_time" -> jobEnd.time,
+      "end_scale_out" -> endScaleOut,
+      "rescaling_time_ratio" -> rescalingTimeRatio,
       "stages" -> infoMap(mapKey)("stages").toString.split(",")
         .map(si => f"${si}" ->  infoMap(f"appId=${applicationId}-jobId=${jobId}-stageId=${si}")).toMap
       )
@@ -276,21 +284,16 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     logger.info(s"Stage ${stageSubmitted.stageInfo.stageId} submitted.")
 
     val stageInfo: StageInfo = stageSubmitted.stageInfo
-    val rddInfo: (Int, Int, Long, Long) = extractFromRDD(stageInfo.rddInfos)
 
     val mapKey: String = f"appId=${applicationId}-jobId=${jobId}-stageId=${stageInfo.stageId}"
 
     infoMap(mapKey) = scala.collection.mutable.Map[String, Any](
-      "start_time" -> stageInfo.submissionTime.toString,
-      "start_scale_out" -> getExecutorCount.toString,
+      "start_time" -> stageInfo.submissionTime,
+      "start_scale_out" -> getExecutorCount,
       "stage_id" -> f"${stageInfo.stageId}",
       "stage_name" -> stageInfo.name,
-      "parent_stage_ids" -> stageInfo.parentIds.map(psi => f"${psi}").toString(),
-      "num_tasks" -> stageInfo.numTasks.toString,
-      "rdd_num_partitions" -> rddInfo._1.toString,
-      "rdd_num_cached_partitions" -> rddInfo._2.toString,
-      "rdd_mem_size" -> rddInfo._3.toString,
-      "rdd_disk_size" -> rddInfo._4.toString
+      "parent_stage_ids" -> stageInfo.parentIds.map(psi => f"${psi}"),
+      "num_tasks" -> stageInfo.numTasks
     )
   }
 
@@ -314,12 +317,18 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       endScaleOut
     )
 
+    val rddInfo: (Int, Int, Long, Long) = extractFromRDD(stageInfo.rddInfos)
+
     infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, Any](
-      "attempt_id" -> stageInfo.attemptNumber().toString,
-      "end_time" -> stageInfo.completionTime.toString,
-      "end_scale_out" -> endScaleOut.toString,
-      "rescaling_time_ratio" -> rescalingTimeRatio.toString,
+      "attempt_id" -> stageInfo.attemptNumber(),
+      "end_time" -> stageInfo.completionTime,
+      "end_scale_out" -> endScaleOut,
+      "rescaling_time_ratio" -> rescalingTimeRatio,
       "failure_reason" -> stageInfo.failureReason.getOrElse(""),
+      "rdd_num_partitions" -> rddInfo._1,
+      "rdd_num_cached_partitions" -> rddInfo._2,
+      "rdd_mem_size" -> rddInfo._3,
+      "rdd_disk_size" -> rddInfo._4,
       "metrics" -> scala.collection.mutable.Map[String, Double](
         "cpu_utilization" -> metricsInfo._1,
         "gc_time_ratio" -> metricsInfo._2,
@@ -343,7 +352,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         "JOB_END",
         Json(CustomFormats).write(infoMap(mapKey)),
         isAdaptive && method.equals("enel") && !reconfigurationRunning)
-
 
       val response: Identity[Response[Either[ResponseException[String, Exception], PredictionResponsePayload]]] = basicRequest
         .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
