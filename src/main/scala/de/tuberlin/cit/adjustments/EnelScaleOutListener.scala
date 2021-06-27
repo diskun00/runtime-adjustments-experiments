@@ -56,8 +56,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   private var reconfigurationRunning: Boolean = false
 
-  private val infoMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, String]] =
-    scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, String]]()
+  private val infoMap: scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, Any]] =
+    scala.collection.mutable.Map[String, scala.collection.mutable.Map[String, Any]]()
 
   // scale-out, time of measurement, total time
   private var scaleOutBuffer: ListBuffer[(Int, Long, Long)] = ListBuffer()
@@ -69,7 +69,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   implicit val serialization: Serialization.type = org.json4s.native.Serialization
   implicit val CustomFormats: Formats = DefaultFormats +
     FieldSerializer[scala.collection.mutable.Map[String, String]]() +
-    FieldSerializer[scala.collection.mutable.Map[String, Double]]()
+    FieldSerializer[scala.collection.mutable.Map[String, Double]]() +
+    FieldSerializer[scala.collection.mutable.Map[String, Any]]()
 
   def getExecutorCount: Int = {
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
@@ -225,9 +226,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     logger.info(s"Job ${jobStart.jobId} started.")
     jobId = jobStart.jobId
 
-    val mapKey: String = f"${applicationId}-${jobId}"
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
 
-    infoMap(mapKey) = scala.collection.mutable.Map[String, String](
+    infoMap(mapKey) = scala.collection.mutable.Map[String, Any](
       "job_id" -> jobStart.jobId.toString,
       "start_time" -> jobStart.time.toString,
       "start_scale_out" -> getExecutorCount.toString,
@@ -242,25 +243,24 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     logger.info(s"Job ${jobEnd.jobId} finished.")
 
-    val mapKey: String = f"${applicationId}-${jobId}"
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
 
     val endScaleOut = getExecutorCount
     val rescalingTimeRatio: Double = computeRescalingTimeRatio(
-      infoMap(mapKey)("start_time").toLong,
+      infoMap(mapKey)("start_time").toString.toLong,
       jobEnd.time,
-      infoMap(mapKey)("start_scale_out").toInt,
+      infoMap(mapKey)("start_scale_out").toString.toInt,
       endScaleOut
     )
 
-    infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, String](
+    infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, Any](
       "end_time" -> jobEnd.time.toString,
       "end_scale_out" -> endScaleOut.toString,
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
-      "stages" -> Json(CustomFormats).write(
-        infoMap(mapKey)("stages").split(",")
-        .map(si => f"${si}" ->  infoMap(f"${applicationId}-${jobId}-${si}")).toMap
+      "stages" -> infoMap(mapKey)("stages").toString.split(",")
+        .map(si => f"${si}" ->  infoMap(f"appId=${applicationId}-jobId=${jobId}-stageId=${si}")).toMap
       )
-    ))
+    )
 
     // remove all already "finished" transitions
     scaleOutBuffer = scaleOutBuffer.filter(_._3 == 0L)
@@ -278,8 +278,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val stageInfo: StageInfo = stageSubmitted.stageInfo
     val rddInfo: (Int, Int, Long, Long) = extractFromRDD(stageInfo.rddInfos)
 
-    val mapKey: String = f"${applicationId}-${jobId}-${stageInfo.stageId}"
-    infoMap(mapKey) = scala.collection.mutable.Map[String, String](
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}-stageId=${stageInfo.stageId}"
+
+    infoMap(mapKey) = scala.collection.mutable.Map[String, Any](
       "start_time" -> stageInfo.submissionTime.toString,
       "start_scale_out" -> getExecutorCount.toString,
       "stage_id" -> f"${stageInfo.stageId}",
@@ -303,29 +304,29 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val stageInfo: StageInfo = stageCompleted.stageInfo
     val metricsInfo: (Double, Double, Double, Double, Double) = extractFromTaskMetrics(stageInfo.taskMetrics)
 
-    val mapKey: String = f"${applicationId}-${jobId}-${stageInfo.stageId}"
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}-stageId=${stageInfo.stageId}"
 
     val endScaleOut = getExecutorCount
     val rescalingTimeRatio: Double = computeRescalingTimeRatio(
       stageInfo.submissionTime.getOrElse(0L),
       stageInfo.completionTime.getOrElse(0L),
-      infoMap(mapKey)("start_scale_out").toInt,
+      infoMap(mapKey)("start_scale_out").toString.toInt,
       endScaleOut
     )
 
-    infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, String](
+    infoMap(mapKey) = infoMap(mapKey).++(scala.collection.mutable.Map[String, Any](
       "attempt_id" -> stageInfo.attemptNumber().toString,
       "end_time" -> stageInfo.completionTime.toString,
       "end_scale_out" -> endScaleOut.toString,
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
       "failure_reason" -> stageInfo.failureReason.getOrElse(""),
-      "metrics" -> Json(CustomFormats).write(scala.collection.mutable.Map[String, Double](
+      "metrics" -> scala.collection.mutable.Map[String, Double](
         "cpu_utilization" -> metricsInfo._1,
         "gc_time_ratio" -> metricsInfo._2,
         "shuffle_rw_ratio" -> metricsInfo._3,
         "data_io_ratio" -> metricsInfo._4,
         "memory_spill_ratio" -> metricsInfo._5
-      ))
+      )
     ))
   }
 
@@ -333,7 +334,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     val backend = HttpURLConnectionBackend()
 
-    val mapKey: String = f"${applicationId}-${jobId}"
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
     try {
       val payload: PredictionRequestPayload = PredictionRequestPayload(
         applicationExecutionId,
