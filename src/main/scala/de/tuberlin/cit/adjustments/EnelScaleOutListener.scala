@@ -2,7 +2,7 @@ package de.tuberlin.cit.adjustments
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.scheduler._
-import org.json4s.DefaultFormats
+import org.json4s.{DefaultFormats, FieldSerializer, Formats}
 import org.json4s.native.{Json, Serialization}
 import sttp.client3._
 import sttp.client3.json4s._
@@ -49,7 +49,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   // for json4s
   implicit val serialization: Serialization.type = org.json4s.native.Serialization
-  implicit val formats: DefaultFormats.type = org.json4s.DefaultFormats
+  implicit val CustomFormats: Formats = DefaultFormats +
+    FieldSerializer[scala.collection.mutable.Map[String, String]]() +
+    FieldSerializer[scala.collection.mutable.Map[String, Double]]()
 
   def getExecutorCount: Int = {
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
@@ -101,7 +103,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         applicationId,
         null,
         updateEvent,
-        Json(DefaultFormats).write(updateMap))
+        Json(CustomFormats).write(updateMap))
 
       basicRequest
         .post(uri"http://$service:$port/$updateInformationEndpoint")
@@ -245,7 +247,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "end_time" -> jobEnd.time.toString,
       "end_scale_out" -> endScaleOut.toString,
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
-      "stages" -> Json(DefaultFormats).write(
+      "stages" -> Json(CustomFormats).write(
         infoMap(mapKey)("stages").split(",")
         .map(si => f"${si}" ->  infoMap(f"${applicationId}-${jobId}-${si}"))
       )
@@ -308,7 +310,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "end_scale_out" -> endScaleOut.toString,
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
       "failure_reason" -> stageInfo.failureReason.getOrElse(""),
-      "metrics" -> Json(DefaultFormats).write(scala.collection.mutable.Map[String, Double](
+      "metrics" -> Json(CustomFormats).write(scala.collection.mutable.Map[String, Double](
         "cpu_utilization" -> metricsInfo._1,
         "gc_time_ratio" -> metricsInfo._2,
         "shuffle_rw_ratio" -> metricsInfo._3,
@@ -340,7 +342,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         applicationId,
         jobId,
         "JOB_END",
-        Json(DefaultFormats).write(infoMap(mapKey)),
+        Json(CustomFormats).write(infoMap(mapKey)),
         isAdaptive && method.equals("enel") && !reconfigurationRunning)
 
       val response = basicRequest
