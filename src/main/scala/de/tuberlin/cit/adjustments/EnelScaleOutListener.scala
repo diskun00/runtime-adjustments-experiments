@@ -204,9 +204,11 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     logger.info(s"Application ${applicationId} finished.")
 
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
+
     val updateMap: Map[String, Any] = Map(
       "end_time" -> applicationEnd.time,
-      "end_scale_out" -> getExecutorCount
+      "end_scale_out" -> infoMap(mapKey)("end_scale_out").toString.toInt
     )
     updateInformation(Option(applicationId), updateMap, "APPLICATION_END")
 
