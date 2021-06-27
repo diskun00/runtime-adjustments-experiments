@@ -188,23 +188,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     handleScaleOutMonitoring(executorRemoved.time)
   }
 
-  override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
-
-    if(!proceed())
-      ()
-
-    logger.info(s"Application ${applicationStart.appId} started.")
-
-    val updateMap: Map[String, String] = Map(
-      "application_id" -> applicationStart.appId.orNull,
-      "application_signature" -> applicationSignature,
-      "attempt_id" -> applicationStart.appAttemptId.orNull,
-      "start_time" -> applicationStart.time.toString
-    )
-    updateInformation(applicationStart.appId, updateMap, "APPLICATION_START")
-
-  }
-
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
     if(!proceed())
@@ -224,6 +207,20 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     if(!proceed())
       ()
+
+    // https://stackoverflow.com/questions/29169981/why-is-sparklistenerapplicationstart-never-fired
+    // onApplicationStart workaround
+    if(jobId == 0){
+      logger.info(s"Application ${applicationId} started.")
+
+      val updateMap: Map[String, String] = Map(
+        "application_id" -> applicationId,
+        "application_signature" -> applicationSignature,
+        "attempt_id" -> sparkContext.applicationAttemptId.orNull,
+        "start_time" -> jobStart.time.toString
+      )
+      updateInformation(Option(applicationId), updateMap, "APPLICATION_START")
+    }
 
     logger.info(s"Job ${jobStart.jobId} started.")
     jobId = jobStart.jobId
