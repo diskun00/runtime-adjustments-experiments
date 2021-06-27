@@ -261,7 +261,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       "rescaling_time_ratio" -> rescalingTimeRatio.toString,
       "stages" -> Json(CustomFormats).write(
         infoMap(mapKey)("stages").split(",")
-        .map(si => f"${si}" ->  infoMap(f"${applicationId}-${jobId}-${si}"))
+        .map(si => f"${si}" ->  infoMap(f"${applicationId}-${jobId}-${si}")).toMap
       )
     ))
 
