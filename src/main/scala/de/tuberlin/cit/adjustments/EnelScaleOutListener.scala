@@ -15,6 +15,24 @@ import scala.concurrent.duration.DurationInt
 import scala.util.Try
 
 
+case class UpdateRequestPayload(application_execution_id: String,
+                                application_id: Option[String],
+                                job_id: Option[Int],
+                                update_event: String,
+                                updates: String)
+
+case class PredictionResponsePayload(best_scale_out: Int,
+                                     best_predicted_runtime: Long,
+                                     do_rescale: Boolean)
+
+case class PredictionRequestPayload(application_execution_id: String,
+                                    application_id: String,
+                                    job_id: Int,
+                                    update_event: String,
+                                    updates: String,
+                                    predict: Boolean)
+
+
 class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) extends SparkListener {
 
   private val logger: Logger = Logger.getLogger(classOf[EnelScaleOutListener])
@@ -89,16 +107,11 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   def updateInformation(applicationId: Option[String], updateMap: Map[String, String], updateEvent: String): Unit = {
-    case class RequestPayload(application_execution_id: String,
-                              application_id: Option[String],
-                              job_id: Option[Int],
-                              update_event: String,
-                              updates: String)
 
     val backend = HttpURLConnectionBackend()
 
     try {
-      val payload: RequestPayload = RequestPayload(
+      val payload: UpdateRequestPayload = UpdateRequestPayload(
         applicationExecutionId,
         applicationId,
         null,
@@ -107,7 +120,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
       basicRequest
         .post(uri"http://$service:$port/$updateInformationEndpoint")
-        .contentType("application/json")
         .body(payload)
         .response(ignore)
         .send(backend)
@@ -322,22 +334,11 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def handleUpdateScaleOut(): Unit = {
 
-    case class ResponsePayload(best_scale_out: Int,
-                               best_predicted_runtime: Long,
-                               do_rescale: Boolean)
-
-    case class RequestPayload(application_execution_id: String,
-                              application_id: String,
-                              job_id: Int,
-                              update_event: String,
-                              updates: String,
-                              predict: Boolean)
-
     val backend = HttpURLConnectionBackend()
 
     val mapKey: String = f"${applicationId}-${jobId}"
     try {
-      val payload: RequestPayload = RequestPayload(
+      val payload: PredictionRequestPayload = PredictionRequestPayload(
         applicationExecutionId,
         applicationId,
         jobId,
@@ -345,12 +346,12 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         Json(CustomFormats).write(infoMap(mapKey)),
         isAdaptive && method.equals("enel") && !reconfigurationRunning)
 
-      val response = basicRequest
+
+      val response: Identity[Response[Either[ResponseException[String, Exception], PredictionResponsePayload]]] = basicRequest
         .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
-        .contentType("application/json")
         .body(payload)
         .readTimeout(restTimeout.seconds)
-        .response(asJson[ResponsePayload])
+        .response(asJson[PredictionResponsePayload])
         .send(backend)
 
       val bestScaleOut: Int = response.body.right.get.best_scale_out
