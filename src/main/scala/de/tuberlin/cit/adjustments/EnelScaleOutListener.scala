@@ -138,11 +138,12 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     } finally backend.close()
   }
 
-  def computeRescalingTimeRatio(startTime: Long, endTime: Long, startScaleOut: Int, endScaleOut: Int): Double = {
+  def computeRescalingTimeRatio(startTime: Long, endTime: Long): Double = {
 
     val dividend: Long = scaleOutBuffer
-      .filter(e => e._1 != startScaleOut && e._1 != endScaleOut)
       .filter(e => e._2 + e._3 >= startTime && e._2 <= endTime)
+      .drop(1) // drop first element => is respective start scale-out
+      .dropRight(1) // drop last element => is respective end scale-out
       .map(e => {
         val startTimeScaleOut: Long = e._2
         var endTimeScaleOut: Long = e._2 + e._3
@@ -269,17 +270,14 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     val mapKey: String = f"appId=${applicationId}-jobId=${jobEnd.jobId}"
 
-    val endScaleOut = getExecutorCount
     val rescalingTimeRatio: Double = computeRescalingTimeRatio(
       infoMap.get(mapKey)("start_time").toString.toLong,
-      jobEnd.time,
-      infoMap.get(mapKey)("start_scale_out").toString.toInt,
-      endScaleOut
+      jobEnd.time
     )
 
     infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
       "end_time" -> jobEnd.time,
-      "end_scale_out" -> endScaleOut,
+      "end_scale_out" -> getExecutorCount,
       "rescaling_time_ratio" -> rescalingTimeRatio,
       "stages" -> infoMap.get(mapKey)("stages").toString.split(",")
         .map(si => f"${si}" ->  infoMap.get(f"appId=${applicationId}-jobId=${jobEnd.jobId}-stageId=${si}")).toMap
@@ -324,12 +322,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     val mapKey: String = f"appId=${applicationId}-jobId=${jobId}-stageId=${stageInfo.stageId}"
 
-    val endScaleOut = getExecutorCount
     val rescalingTimeRatio: Double = computeRescalingTimeRatio(
       stageInfo.submissionTime.getOrElse(0L),
-      stageInfo.completionTime.getOrElse(0L),
-      infoMap.get(mapKey)("start_scale_out").toString.toInt,
-      endScaleOut
+      stageInfo.completionTime.getOrElse(0L)
     )
 
     val rddInfo: (Int, Int, Long, Long) = extractFromRDD(stageInfo.rddInfos)
@@ -337,7 +332,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
       "attempt_id" -> stageInfo.attemptNumber(),
       "end_time" -> stageInfo.completionTime,
-      "end_scale_out" -> endScaleOut,
+      "end_scale_out" -> getExecutorCount,
       "rescaling_time_ratio" -> rescalingTimeRatio,
       "failure_reason" -> stageInfo.failureReason.getOrElse(""),
       "rdd_num_partitions" -> rddInfo._1,
