@@ -217,6 +217,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       return
     }
 
+    val startScaleOut = getExecutorCount
+
     // https://stackoverflow.com/questions/29169981/why-is-sparklistenerapplicationstart-never-fired
     // onApplicationStart workaround
     if(jobId == 0){
@@ -226,7 +228,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         "application_id" -> applicationId,
         "application_signature" -> applicationSignature,
         "attempt_id" -> sparkContext.applicationAttemptId.orNull,
-        "start_time" -> jobStart.time
+        "start_time" -> jobStart.time,
+        "start_scale_out" -> startScaleOut
       )
       updateInformation(Option(applicationId), updateMap, "APPLICATION_START")
     }
@@ -239,7 +242,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     infoMap(mapKey) = scala.collection.mutable.Map[String, Any](
       "job_id" -> jobStart.jobId,
       "start_time" -> jobStart.time,
-      "start_scale_out" -> getExecutorCount,
+      "start_scale_out" -> startScaleOut,
       "stages" -> jobStart.stageInfos.map(si => f"${si.stageId}").mkString(",")
     )
   }
