@@ -3,7 +3,7 @@
  */
 package de.tuberlin.cit.jobs.v2_1
 
-import de.tuberlin.cit.jobs.JobUtils
+import de.tuberlin.cit.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
@@ -23,7 +23,10 @@ object KMeans {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    JobUtils.addCustomListeners(sparkContext, sparkConf)
+    val ellisListener: EllisScaleOutListener = new EllisScaleOutListener(sparkContext, sparkConf)
+    sparkContext.addSparkListener(ellisListener)
+    val enelListener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
+    sparkContext.addSparkListener(enelListener)
 
     println("Start KMeans training...")
     // Load and parse the data
@@ -43,8 +46,11 @@ object KMeans {
     clusters.clusterCenters.foreach(v => {
       println(v)
     })
-    sparkContext.stop()
 
+    while(enelListener.applicationIsRunning){
+      Thread.sleep(5000)
+    }
+    sparkContext.stop()
   }
 }
 

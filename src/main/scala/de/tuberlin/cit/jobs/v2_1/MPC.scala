@@ -1,6 +1,6 @@
 package de.tuberlin.cit.jobs.v2_1
 
-import de.tuberlin.cit.jobs.JobUtils
+import de.tuberlin.cit.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
@@ -29,7 +29,10 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-    JobUtils.addCustomListeners(spark.sparkContext, sparkConf)
+    val ellisListener: EllisScaleOutListener = new EllisScaleOutListener(spark.sparkContext, sparkConf)
+    spark.sparkContext.addSparkListener(ellisListener)
+    val enelListener: EnelScaleOutListener = new EnelScaleOutListener(spark.sparkContext, sparkConf)
+    spark.sparkContext.addSparkListener(enelListener)
 
     val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')
@@ -76,6 +79,9 @@ object MPC {
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
 
+    while(enelListener.applicationIsRunning){
+      Thread.sleep(5000)
+    }
     spark.stop()
   }
 }

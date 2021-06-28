@@ -39,6 +39,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   logger.info("Initializing Enel listener")
   private val applicationId: String = sparkConf.getAppId
   private val applicationSignature: String = sparkConf.get("spark.app.name")
+  private var applicationRunning: Boolean = false
   checkConfigurations()
   private val restTimeout: Int = sparkConf.get("spark.customExtraListener.restTimeout").toInt
   private val service: String = sparkConf.get("spark.customExtraListener.service")
@@ -76,6 +77,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def getExecutorCount: Int = {
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
+  }
+
+  def applicationIsRunning: Boolean = {
+    applicationRunning
   }
 
   def saveDivision(a: Int, b: Int): Double = {
@@ -199,6 +204,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
+    applicationRunning = false
+
     if(!active){
       return
     }
@@ -212,6 +219,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
+
+    if(jobId == 0){
+      applicationRunning = true
+    }
 
     if(!active){
       return

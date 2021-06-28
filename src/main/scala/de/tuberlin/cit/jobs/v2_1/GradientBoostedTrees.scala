@@ -1,6 +1,6 @@
 package de.tuberlin.cit.jobs.v2_1
 
-import de.tuberlin.cit.jobs.JobUtils
+import de.tuberlin.cit.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.mllib.tree.configuration.BoostingStrategy
 import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.{SparkConf, SparkContext}
@@ -18,7 +18,10 @@ object GradientBoostedTrees {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    JobUtils.addCustomListeners(sparkContext, sparkConf)
+    val ellisListener: EllisScaleOutListener = new EllisScaleOutListener(sparkContext, sparkConf)
+    sparkContext.addSparkListener(ellisListener)
+    val enelListener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
+    sparkContext.addSparkListener(enelListener)
 
     sparkContext.textFile(conf.input())
 
@@ -48,8 +51,11 @@ object GradientBoostedTrees {
     val testErr = labelAndPreds.filter(r => r._1 != r._2).count.toDouble / testData.count()
     println("Test Error = " + testErr)
     println("Learned classification GBT model:\n" + model.toDebugString)
-    sparkContext.stop()
 
+    while(enelListener.applicationIsRunning){
+      Thread.sleep(5000)
+    }
+    sparkContext.stop()
   }
 }
 
