@@ -49,6 +49,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   private val isAdaptive: Boolean = sparkConf.getBoolean("spark.customExtraListener.isAdaptive", defaultValue = true)
   private val method: String = sparkConf.get("spark.customExtraListener.method")
 
+  private val active: Boolean = !isAdaptive || (isAdaptive && method.equals("enel"))
+
   private var jobId: Int = _
 
   private var desiredScaleOut: Int = _
@@ -74,10 +76,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def getExecutorCount: Int = {
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
-  }
-
-  def proceed(): Boolean = {
-    !isAdaptive || (isAdaptive && method.equals("enel"))
   }
 
   def saveDivision(a: Int, b: Int): Double = {
@@ -183,24 +181,27 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     handleScaleOutMonitoring(executorAdded.time)
   }
 
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     handleScaleOutMonitoring(executorRemoved.time)
   }
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     logger.info(s"Application ${applicationId} finished.")
 
@@ -212,8 +213,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     // https://stackoverflow.com/questions/29169981/why-is-sparklistenerapplicationstart-never-fired
     // onApplicationStart workaround
@@ -244,8 +246,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     logger.info(s"Job ${jobEnd.jobId} finished.")
 
@@ -276,8 +279,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     logger.info(s"Stage ${stageSubmitted.stageInfo.stageId} submitted.")
 
@@ -297,8 +301,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     logger.info(s"Stage ${stageCompleted.stageInfo.stageId} completed.")
 

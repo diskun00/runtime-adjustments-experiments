@@ -21,6 +21,8 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
   private val isAdaptive: Boolean = sparkConf.getBoolean("spark.customExtraListener.isAdaptive",defaultValue = true)
   private val method: String = sparkConf.get("spark.customExtraListener.method")
 
+  private val active: Boolean = !isAdaptive || (isAdaptive && method.equals("ellis"))
+
   private var appEventId: Long = _
   private var appStartTime: Long = _
   private var jobStartTime: Long = _
@@ -37,11 +39,6 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
   scaleOut = initialExecutors
   nextScaleOut = scaleOut
   logger.info(s"Using initial scale-out of $scaleOut.")
-
-  def proceed(): Boolean = {
-    !isAdaptive || (isAdaptive && method.equals("ellis"))
-  }
-
 
   def checkConfigurations(){
     /**
@@ -60,8 +57,9 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     DB localTx { implicit session =>
       sql"""
@@ -74,8 +72,9 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     logger.info(s"Job ${jobStart.jobId} started.")
     jobStartTime = jobStart.time
@@ -103,8 +102,9 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
 
-    if(!proceed())
-      ()
+    if(!active){
+      return
+    }
 
     jobEndTime = jobEnd.time
     val jobDuration = jobEndTime - jobStartTime
