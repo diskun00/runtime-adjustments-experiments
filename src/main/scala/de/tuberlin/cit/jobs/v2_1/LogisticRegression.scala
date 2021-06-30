@@ -60,9 +60,6 @@ object LogisticRegression {
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
 
-    while(enelListener.applicationIsRunning){
-      Thread.sleep(5000)
-    }
     sparkContext.stop()
   }
 }

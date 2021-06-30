@@ -79,9 +79,6 @@ object MPC {
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
 
-    while(enelListener.applicationIsRunning){
-      Thread.sleep(5000)
-    }
     spark.stop()
   }
 }

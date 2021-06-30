@@ -40,7 +40,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   logger.info("Initializing Enel listener")
   private val applicationId: String = sparkConf.getAppId
   private val applicationSignature: String = sparkConf.get("spark.app.name")
-  private var applicationRunning: Boolean = false
   checkConfigurations()
   private val restTimeout: Int = sparkConf.get("spark.customExtraListener.restTimeout").toInt
   private val service: String = sparkConf.get("spark.customExtraListener.service")
@@ -77,12 +76,17 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     FieldSerializer[scala.collection.mutable.Map[String, Any]]() +
     FieldSerializer[Map[String, Any]]()
 
-  def getExecutorCount: Int = {
+  def calculateExecutorCount: Int = {
     sparkContext.getExecutorMemoryStatus.toSeq.length - 1
   }
 
-  def applicationIsRunning: Boolean = {
-    applicationRunning
+  def getExecutorCount: Int = {
+    if(scaleOutBuffer.isEmpty){
+      calculateExecutorCount
+    }
+    else{
+      scaleOutBuffer.last._1
+    }
   }
 
   def saveDivision(a: Int, b: Int): Double = {
@@ -210,8 +214,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
 
-    applicationRunning = false
-
     if(!active){
       return
     }
@@ -226,15 +228,11 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
 
-    jobId = jobStart.jobId
-
-    if(jobId == 0){
-      applicationRunning = true
-    }
-
     if(!active){
       return
     }
+
+    jobId = jobStart.jobId
 
     val startScaleOut = getExecutorCount
 
@@ -401,7 +399,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   def handleScaleOutMonitoring(executorActionTime: Long): Unit = {
-    currentScaleOut = getExecutorCount
+    currentScaleOut = calculateExecutorCount
     logger.info(s"Current number of executors: $currentScaleOut.")
 
     scaleOutBuffer.append((currentScaleOut, executorActionTime))

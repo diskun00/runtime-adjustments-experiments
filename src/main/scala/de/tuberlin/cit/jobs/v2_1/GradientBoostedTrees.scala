@@ -52,9 +52,6 @@ object GradientBoostedTrees {
     println("Test Error = " + testErr)
     println("Learned classification GBT model:\n" + model.toDebugString)
 
-    while(enelListener.applicationIsRunning){
-      Thread.sleep(5000)
-    }
     sparkContext.stop()
   }
 }

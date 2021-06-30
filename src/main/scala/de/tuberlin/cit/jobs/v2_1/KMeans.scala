@@ -47,9 +47,6 @@ object KMeans {
       println(v)
     })
 
-    while(enelListener.applicationIsRunning){
-      Thread.sleep(5000)
-    }
     sparkContext.stop()
   }
 }
