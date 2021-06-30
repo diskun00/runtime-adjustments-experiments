@@ -66,7 +66,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     new ConcurrentHashMap[String, scala.collection.mutable.Map[String, Any]]()
 
   // scale-out, time of measurement, total time
-  private val scaleOutBuffer: ListBuffer[(Int, Long, Long)] = ListBuffer()
+  private val scaleOutBuffer: ListBuffer[(Int, Long)] = ListBuffer()
 
   private val initialExecutors: Int = sparkConf.get("spark.customExtraListener.initialExecutors").toInt
   logger.info(s"Using initial scale-out of $initialExecutors.")
@@ -142,7 +142,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def computeRescalingTimeRatio(startTime: Long, endTime: Long): Double = {
 
-    val dividend: Long = scaleOutBuffer
+    val scaleOutList: List[(Int, Long)] = scaleOutBuffer.toList
+
+    val dividend: Long = scaleOutList
+      .zipWithIndex.map { case (tup, idx) => (tup._1, tup._2, Try(scaleOutList(idx + 1)._2 - tup._2).getOrElse(0L))}
       .filter(e => e._2 + e._3 >= startTime && e._2 <= endTime)
       .drop(1) // drop first element => is respective start scale-out
       .dropRight(1) // drop last element => is respective end scale-out
@@ -402,12 +405,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     currentScaleOut = getExecutorCount
     logger.info(s"Current number of executors: $currentScaleOut.")
 
-    if(scaleOutBuffer.nonEmpty){
-      val lastElement: (Int, Long, Long) = scaleOutBuffer.last
-      scaleOutBuffer(scaleOutBuffer.size - 1) = (lastElement._1, lastElement._2, executorActionTime - lastElement._2)
-    }
-
-    scaleOutBuffer.append((currentScaleOut, executorActionTime, 0L))
+    scaleOutBuffer.append((currentScaleOut, executorActionTime))
 
     if(reconfigurationRunning){
       if(currentScaleOut == desiredScaleOut){
