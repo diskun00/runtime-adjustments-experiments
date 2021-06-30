@@ -53,6 +53,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   private val active: Boolean = !isAdaptive || (isAdaptive && method.equals("enel"))
 
+  private var blockingRequest: (Int, Boolean) = (-1, false)
+
   private var jobId: Int = _
 
   private var desiredScaleOut: Int = _
@@ -64,7 +66,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     new ConcurrentHashMap[String, scala.collection.mutable.Map[String, Any]]()
 
   // scale-out, time of measurement, total time
-  private var scaleOutBuffer: ListBuffer[(Int, Long, Long)] = ListBuffer()
+  private val scaleOutBuffer: ListBuffer[(Int, Long, Long)] = ListBuffer()
 
   private val initialExecutors: Int = sparkConf.get("spark.customExtraListener.initialExecutors").toInt
   logger.info(s"Using initial scale-out of $initialExecutors.")
@@ -351,9 +353,14 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   def handleUpdateScaleOut(currentJobId: Int): Unit = {
 
+    val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId}"
+    val requestPrediction = isAdaptive && method.equals("enel") && !reconfigurationRunning & !blockingRequest._2
+    if(requestPrediction){
+      blockingRequest = (currentJobId, true)
+    }
+
     val backend = HttpURLConnectionBackend()
 
-    val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId}"
     try {
       val payload: PredictionRequestPayload = PredictionRequestPayload(
         applicationExecutionId,
@@ -361,7 +368,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         currentJobId,
         "JOB_END",
         Json(CustomFormats).write(infoMap.get(mapKey)),
-        isAdaptive && method.equals("enel") && !reconfigurationRunning)
+        requestPrediction)
 
       val response: Identity[Response[Either[ResponseException[String, Exception], PredictionResponsePayload]]] = basicRequest
         .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
@@ -383,7 +390,12 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       else {
         logger.info(s"Scale-out is not changed.")
       }
-    } finally backend.close()
+    } finally {
+      backend.close()
+      if(blockingRequest._1 == currentJobId){
+        blockingRequest = (-1, false)
+      }
+    }
   }
 
   def handleScaleOutMonitoring(executorActionTime: Long): Unit = {
