@@ -280,14 +280,13 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       jobEnd.time
     )
 
-    infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
+    infoMap.put(mapKey, infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
       "end_time" -> jobEnd.time,
       "end_scale_out" -> getExecutorCount,
       "rescaling_time_ratio" -> rescalingTimeRatio,
       "stages" -> infoMap.get(mapKey)("stages").toString.split(",")
         .map(si => f"${si}" ->  infoMap.get(f"appId=${applicationId}-jobId=${jobEnd.jobId}-stageId=${si}")).toMap
-      )
-    )
+    )))
 
     handleUpdateScaleOut(jobEnd.jobId)
   }
@@ -334,7 +333,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     val rddInfo: (Int, Int, Long, Long) = extractFromRDD(stageInfo.rddInfos)
 
-    infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
+    infoMap.put(mapKey, infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
       "attempt_id" -> stageInfo.attemptNumber(),
       "end_time" -> stageInfo.completionTime,
       "end_scale_out" -> getExecutorCount,
@@ -351,7 +350,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         "data_io_ratio" -> metricsInfo._4,
         "memory_spill_ratio" -> metricsInfo._5
       )
-    ))
+    )))
   }
 
   def handleUpdateScaleOut(currentJobId: Int): Unit = {
