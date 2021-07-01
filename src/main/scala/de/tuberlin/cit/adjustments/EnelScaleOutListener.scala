@@ -219,11 +219,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     }
 
     logger.info(s"Application ${applicationId} finished.")
-
-    val updateMap: Map[String, Any] = Map(
-      "end_time" -> applicationEnd.time
-    )
-    updateInformation(Option(applicationId), updateMap, "APPLICATION_END")
   }
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
