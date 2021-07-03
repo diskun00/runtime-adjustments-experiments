@@ -375,7 +375,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       val bestScaleOut: Int = response.body.right.get.best_scale_out
       val doRescale: Boolean = response.body.right.get.do_rescale
 
-      if(doRescale && bestScaleOut != currentScaleOut){
+      if(doRescale && bestScaleOut != currentScaleOut && !sparkContext.isStopped){
         reconfigurationRunning = true
 
         logger.info(s"Adjusting scale-out from $currentScaleOut to $bestScaleOut.")
