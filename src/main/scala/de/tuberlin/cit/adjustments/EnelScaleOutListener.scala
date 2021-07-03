@@ -354,7 +354,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       blockingRequest = (currentJobId, true)
     }
 
-    val backend = HttpURLConnectionBackend()
+    val backend = HttpURLConnectionBackend(
+      options = SttpBackendOptions.connectionTimeout(restTimeout.seconds)
+    )
 
     try {
       val payload: PredictionRequestPayload = PredictionRequestPayload(
