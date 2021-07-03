@@ -23,7 +23,7 @@ case class UpdateRequestPayload(application_execution_id: String,
                                 updates: String)
 
 case class PredictionResponsePayload(best_scale_out: Int,
-                                     best_predicted_runtime: Long,
+                                     best_predicted_runtime: Double,
                                      do_rescale: Boolean)
 
 case class PredictionRequestPayload(application_execution_id: String,
