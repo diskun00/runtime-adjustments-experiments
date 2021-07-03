@@ -8,11 +8,14 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.json4s.native.{Json, Serialization}
 import org.json4s.{DefaultFormats, FieldSerializer, Formats}
 import sttp.client3._
+import sttp.client3.asynchttpclient.future.AsyncHttpClientFutureBackend
 import sttp.client3.json4s._
 
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.concurrent.duration.{Duration, SECONDS}
 import scala.util.Try
 
 
@@ -354,43 +357,48 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       blockingRequest = (currentJobId, true)
     }
 
-    val backend = HttpURLConnectionBackend(
-      options = SttpBackendOptions.connectionTimeout(restTimeout.seconds)
+    val backend = AsyncHttpClientFutureBackend(
+      options = SttpBackendOptions.connectionTimeout(Duration(restTimeout, SECONDS))
     )
 
-    try {
-      val payload: PredictionRequestPayload = PredictionRequestPayload(
-        applicationExecutionId,
-        applicationId,
-        currentJobId,
-        "JOB_END",
-        Json(CustomFormats).write(infoMap.get(mapKey)),
-        requestPrediction)
+    val payload: PredictionRequestPayload = PredictionRequestPayload(
+      applicationExecutionId,
+      applicationId,
+      currentJobId,
+      "JOB_END",
+      Json(CustomFormats).write(infoMap.get(mapKey)),
+      requestPrediction)
 
-      val response: Identity[Response[Either[ResponseException[String, Exception], PredictionResponsePayload]]] = basicRequest
-        .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
-        .body(payload)
-        .readTimeout(restTimeout.seconds)
-        .response(asJson[PredictionResponsePayload])
-        .send(backend)
+    val response: Future[Response[Either[ResponseException[String, Exception], PredictionResponsePayload]]] = basicRequest
+      .post(uri"http://$service:$port/$onlineScaleOutPredictionEndpoint")
+      .body(payload)
+      .readTimeout(Duration(restTimeout, SECONDS))
+      .response(asJson[PredictionResponsePayload])
+      .send(backend)
 
-      val bestScaleOut: Int = response.body.right.get.best_scale_out
-      val doRescale: Boolean = response.body.right.get.do_rescale
+    for {
+      res <- response
+    } {
+      try{
+        val bestScaleOut: Int = res.body.right.get.best_scale_out
+        val doRescale: Boolean = res.body.right.get.do_rescale
 
-      if(doRescale && bestScaleOut != currentScaleOut && !sparkContext.isStopped){
-        reconfigurationRunning = true
+        if(doRescale && bestScaleOut != currentScaleOut && !sparkContext.isStopped){
+          reconfigurationRunning = true
 
-        logger.info(s"Adjusting scale-out from $currentScaleOut to $bestScaleOut.")
-        desiredScaleOut = bestScaleOut
-        sparkContext.requestTotalExecutors(desiredScaleOut, 0, Map[String,Int]())
+          logger.info(s"Adjusting scale-out from $currentScaleOut to $bestScaleOut.")
+          desiredScaleOut = bestScaleOut
+          sparkContext.requestTotalExecutors(desiredScaleOut, 0, Map[String,Int]())
+        }
+        else {
+          logger.info(s"Scale-out is not changed.")
+        }
       }
-      else {
-        logger.info(s"Scale-out is not changed.")
-      }
-    } finally {
-      backend.close()
-      if(blockingRequest._1 == currentJobId){
-        blockingRequest = (-1, false)
+      finally {
+        backend.close()
+        if(blockingRequest._1 == currentJobId){
+          blockingRequest = (-1, false)
+        }
       }
     }
   }
