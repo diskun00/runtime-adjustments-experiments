@@ -80,7 +80,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val driverHost: String = sparkContext.getConf.get("spark.driver.host")
     allExecutors
       .filter(! _.split(":")(0).equals(driverHost))
-      .filter(! _.split(":")(0).equals(executorHost))
+      .filter(! _.split(":")(0).equals(executorHost.split(":")(0)))
       .toList
       .length
   }
