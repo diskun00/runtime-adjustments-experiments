@@ -22,10 +22,8 @@ object LogisticRegression {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val ellisListener: EllisScaleOutListener = new EllisScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(ellisListener)
-    val enelListener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(enelListener)
+    sparkContext.addSparkListener(new EnelScaleOutListener(sparkContext, sparkConf))
+    sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
 
     var data = sparkContext.textFile(conf.input(), sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')

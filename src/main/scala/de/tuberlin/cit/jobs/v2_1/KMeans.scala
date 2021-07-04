@@ -23,10 +23,8 @@ object KMeans {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val ellisListener: EllisScaleOutListener = new EllisScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(ellisListener)
-    val enelListener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(enelListener)
+    sparkContext.addSparkListener(new EnelScaleOutListener(sparkContext, sparkConf))
+    sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
 
     println("Start KMeans training...")
     // Load and parse the data

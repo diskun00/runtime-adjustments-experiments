@@ -29,10 +29,8 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-    val ellisListener: EllisScaleOutListener = new EllisScaleOutListener(spark.sparkContext, sparkConf)
-    spark.sparkContext.addSparkListener(ellisListener)
-    val enelListener: EnelScaleOutListener = new EnelScaleOutListener(spark.sparkContext, sparkConf)
-    spark.sparkContext.addSparkListener(enelListener)
+    spark.sparkContext.addSparkListener(new EnelScaleOutListener(spark.sparkContext, sparkConf))
+    spark.sparkContext.addSparkListener(new EllisScaleOutListener(spark.sparkContext, sparkConf))
 
     val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')

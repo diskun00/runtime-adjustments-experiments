@@ -12,6 +12,7 @@ import sttp.client3.asynchttpclient.future.AsyncHttpClientFutureBackend
 import sttp.client3.json4s._
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -55,12 +56,6 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   private val active: Boolean = !isAdaptive || (isAdaptive && method.equals("enel"))
 
-  private var blockingRequest: (Int, Boolean) = (-1, false)
-
-  private var jobId: Int = _
-
-  private var currentScaleOut: Int = _
-
   private val infoMap: ConcurrentHashMap[String, scala.collection.mutable.Map[String, Any]] =
     new ConcurrentHashMap[String, scala.collection.mutable.Map[String, Any]]()
 
@@ -76,21 +71,22 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     FieldSerializer[scala.collection.mutable.Map[String, Any]]() +
     FieldSerializer[Map[String, Any]]()
 
-  def calculateExecutorCount: Int = {
-    val allExecutorsList = sparkContext.getExecutorMemoryStatus.toSeq.map(_._1)
-    val driverHost: String = sparkConf.get("spark.driver.host")
-    val filteredExecutorsList = allExecutorsList.filter(! _.split(":")(0).equals(driverHost)).toList
+  private val currentPredictionRequest = new AtomicInteger(-1)
+  private val currentJobId = new AtomicInteger(0)
+  private val currentScaleOut = new AtomicInteger(0)
 
-    filteredExecutorsList.size
+  def getInitialScaleOutCount(executorHost: String): Int = {
+    val allExecutors = sparkContext.getExecutorMemoryStatus.toSeq.map(_._1)
+    val driverHost: String = sparkContext.getConf.get("spark.driver.host")
+    allExecutors
+      .filter(! _.split(":")(0).equals(driverHost))
+      .filter(! _.split(":")(0).equals(executorHost))
+      .toList
+      .length
   }
 
   def getExecutorCount: Int = {
-    if(scaleOutBuffer.isEmpty){
-      calculateExecutorCount
-    }
-    else{
-      scaleOutBuffer.maxBy(_._2)._1
-    }
+    currentScaleOut.get()
   }
 
   def saveDivision(a: Int, b: Int): Double = {
@@ -200,21 +196,35 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
-
-    if(!active){
-      return
-    }
-
-    handleScaleOutMonitoring(executorAdded.time)
+    handleScaleOutMonitoring(executorAdded.time, executorAdded.executorInfo.executorHost)
   }
 
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
+    handleScaleOutMonitoring(executorRemoved.time, "NO_HOST")
+  }
 
-    if(!active){
-      return
+  def handleScaleOutMonitoring(executorActionTime: Long, executorHost: String): Unit = {
+
+    synchronized {
+      if(!active){
+        return
+      }
+       // no scale-out yet? get the number of currently running executors
+      if(currentScaleOut.get() == 0){
+        currentScaleOut.set(getInitialScaleOutCount(executorHost))
+      }
+      // an executor was removed? Else: an executor was added
+      if(executorHost.equals("NO_HOST")){
+        currentScaleOut.decrementAndGet()
+      }
+      else{
+        currentScaleOut.incrementAndGet()
+      }
+
+      logger.info(s"Current number of executors: ${currentScaleOut.get()}.")
+      scaleOutBuffer.append((currentScaleOut.get(), executorActionTime))
     }
 
-    handleScaleOutMonitoring(executorRemoved.time)
   }
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
@@ -232,13 +242,13 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       return
     }
 
-    jobId = jobStart.jobId
+    currentJobId.set(jobStart.jobId)
 
     val startScaleOut = getExecutorCount
 
     // https://stackoverflow.com/questions/29169981/why-is-sparklistenerapplicationstart-never-fired
     // onApplicationStart workaround
-    if(jobId == 0){
+    if(jobStart.jobId == 0){
       logger.info(s"Application ${applicationId} started.")
 
       val updateMap: Map[String, Any] = Map(
@@ -299,7 +309,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
     val stageInfo: StageInfo = stageSubmitted.stageInfo
 
-    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}-stageId=${stageInfo.stageId}"
+    val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId.get()}-stageId=${stageInfo.stageId}"
 
     infoMap.put(mapKey, scala.collection.mutable.Map[String, Any](
       "start_time" -> stageInfo.submissionTime,
@@ -322,7 +332,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val stageInfo: StageInfo = stageCompleted.stageInfo
     val metricsInfo: (Double, Double, Double, Double, Double) = extractFromTaskMetrics(stageInfo.taskMetrics)
 
-    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}-stageId=${stageInfo.stageId}"
+    val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId.get()}-stageId=${stageInfo.stageId}"
 
     val rescalingTimeRatio: Double = computeRescalingTimeRatio(
       stageInfo.submissionTime.getOrElse(0L),
@@ -354,9 +364,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   def handleUpdateScaleOut(currentJobId: Int): Unit = {
 
     val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId}"
-    val requestPrediction = isAdaptive && method.equals("enel") && !blockingRequest._2
+    val requestPrediction = isAdaptive && method.equals("enel") && currentPredictionRequest.get() == -1
     if(requestPrediction){
-      blockingRequest = (currentJobId, true)
+      currentPredictionRequest.set(currentJobId)
     }
 
     val backend = AsyncHttpClientFutureBackend(
@@ -385,8 +395,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         val bestScaleOut: Int = res.body.right.get.best_scale_out
         val doRescale: Boolean = res.body.right.get.do_rescale
 
-        if(doRescale && bestScaleOut != currentScaleOut && !sparkContext.isStopped){
-          logger.info(s"Adjusting scale-out from $currentScaleOut to $bestScaleOut.")
+        if(doRescale && bestScaleOut != currentScaleOut.get() && !sparkContext.isStopped){
+          logger.info(s"Adjusting scale-out from ${currentScaleOut.get()} to $bestScaleOut.")
           val requestResult = sparkContext.requestTotalExecutors(bestScaleOut, 0, Map[String, Int]())
           logger.info("Change scaling result: " + requestResult.toString)
         }
@@ -396,17 +406,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       }
       finally {
         backend.close()
-        if(blockingRequest._1 == currentJobId){
-          blockingRequest = (-1, false)
+        if(currentPredictionRequest.get() == currentJobId){
+          currentPredictionRequest.set(-1)
         }
       }
     }
-  }
-
-  def handleScaleOutMonitoring(executorActionTime: Long): Unit = {
-    currentScaleOut = calculateExecutorCount
-    logger.info(s"Current number of executors: $currentScaleOut.")
-
-    scaleOutBuffer.append((currentScaleOut, executorActionTime))
   }
 }
