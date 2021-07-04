@@ -77,7 +77,11 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     FieldSerializer[Map[String, Any]]()
 
   def calculateExecutorCount: Int = {
-    sparkContext.getExecutorMemoryStatus.toSeq.length - 1
+    val allExecutorsList = sparkContext.getExecutorMemoryStatus.toSeq.map(_._1)
+    val driverHost: String = sparkConf.get("spark.driver.host")
+    val filteredExecutorsList = allExecutorsList.filter(! _.split(":")(0).equals(driverHost)).toList
+
+    filteredExecutorsList.size
   }
 
   def getExecutorCount: Int = {
@@ -85,7 +89,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       calculateExecutorCount
     }
     else{
-      scaleOutBuffer.last._1
+      scaleOutBuffer.maxBy(_._2)._1
     }
   }
 
@@ -149,6 +153,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val scaleOutList: List[(Int, Long)] = scaleOutBuffer.toList
 
     val dividend: Long = scaleOutList
+      .sortBy(_._2)
       .zipWithIndex.map { case (tup, idx) => (tup._1, tup._2, Try(scaleOutList(idx + 1)._2 - tup._2).getOrElse(0L))}
       .filter(e => e._2 + e._3 >= startTime && e._2 <= endTime)
       .drop(1) // drop first element => is respective start scale-out
