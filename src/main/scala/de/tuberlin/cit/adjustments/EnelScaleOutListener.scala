@@ -132,7 +132,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       val payload: UpdateRequestPayload = UpdateRequestPayload(
         applicationExecutionId,
         applicationId,
-        null,
+        None,
         updateEvent,
         Json(CustomFormats).write(updateMap))
 
@@ -196,14 +196,14 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   }
 
   override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
-    handleScaleOutMonitoring(executorAdded.time, executorAdded.executorInfo.executorHost)
+    handleScaleOutMonitoring(Option(executorAdded.time), Option(executorAdded.executorInfo.executorHost))
   }
 
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
-    handleScaleOutMonitoring(executorRemoved.time, "NO_HOST")
+    handleScaleOutMonitoring(Option(executorRemoved.time), Option("NO_HOST"))
   }
 
-  def handleScaleOutMonitoring(executorActionTime: Long, executorHost: String): Unit = {
+  def handleScaleOutMonitoring(executorActionTime: Option[Long], executorHost: Option[String]): Unit = {
 
     synchronized {
       if(!active){
@@ -211,18 +211,20 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       }
        // no scale-out yet? get the number of currently running executors
       if(currentScaleOut.get() == 0){
-        currentScaleOut.set(getInitialScaleOutCount(executorHost))
+        currentScaleOut.set(getInitialScaleOutCount(executorHost.getOrElse("NO_HOST")))
       }
       // an executor was removed? Else: an executor was added
-      if(executorHost.equals("NO_HOST")){
+      if(executorHost.isDefined && executorHost.get.equals("NO_HOST")){
         currentScaleOut.decrementAndGet()
       }
-      else{
+      else if(executorHost.isDefined){
         currentScaleOut.incrementAndGet()
       }
 
       logger.info(s"Current number of executors: ${currentScaleOut.get()}.")
-      scaleOutBuffer.append((currentScaleOut.get(), executorActionTime))
+      if(executorActionTime.isDefined){
+        scaleOutBuffer.append((currentScaleOut.get(), executorActionTime.get))
+      }
     }
 
   }
@@ -243,6 +245,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     }
 
     currentJobId.set(jobStart.jobId)
+
+    if(jobStart.jobId == 0){
+      handleScaleOutMonitoring(None, None)
+    }
 
     val startScaleOut = getExecutorCount
 
