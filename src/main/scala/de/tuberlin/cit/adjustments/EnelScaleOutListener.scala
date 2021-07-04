@@ -59,10 +59,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   private var jobId: Int = _
 
-  private var desiredScaleOut: Int = _
   private var currentScaleOut: Int = _
-
-  private var reconfigurationRunning: Boolean = false
 
   private val infoMap: ConcurrentHashMap[String, scala.collection.mutable.Map[String, Any]] =
     new ConcurrentHashMap[String, scala.collection.mutable.Map[String, Any]]()
@@ -352,7 +349,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   def handleUpdateScaleOut(currentJobId: Int): Unit = {
 
     val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId}"
-    val requestPrediction = isAdaptive && method.equals("enel") && !reconfigurationRunning & !blockingRequest._2
+    val requestPrediction = isAdaptive && method.equals("enel") && !blockingRequest._2
     if(requestPrediction){
       blockingRequest = (currentJobId, true)
     }
@@ -384,11 +381,9 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         val doRescale: Boolean = res.body.right.get.do_rescale
 
         if(doRescale && bestScaleOut != currentScaleOut && !sparkContext.isStopped){
-          reconfigurationRunning = true
-
           logger.info(s"Adjusting scale-out from $currentScaleOut to $bestScaleOut.")
-          desiredScaleOut = bestScaleOut
-          sparkContext.requestTotalExecutors(desiredScaleOut, 0, Map[String,Int]())
+          val requestResult = sparkContext.requestTotalExecutors(bestScaleOut, 0, Map[String, Int]())
+          logger.info("Change scaling result: " + requestResult.toString)
         }
         else {
           logger.info(s"Scale-out is not changed.")
@@ -408,11 +403,5 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     logger.info(s"Current number of executors: $currentScaleOut.")
 
     scaleOutBuffer.append((currentScaleOut, executorActionTime))
-
-    if(reconfigurationRunning){
-      if(currentScaleOut == desiredScaleOut){
-        reconfigurationRunning = false
-      }
-    }
   }
 }
