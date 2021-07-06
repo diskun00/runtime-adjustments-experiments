@@ -149,7 +149,7 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
       SELECT JOB_ID, SCALE_OUT, DURATION_MS
       FROM APP_EVENT JOIN JOB_EVENT ON APP_EVENT.ID = JOB_EVENT.APP_EVENT_ID
       WHERE APP_ID = ${appSignature}
-      AND WHERE ID < ${appEventId}
+      AND ID < ${appEventId}
       ORDER BY JOB_ID;
       """.map({ rs =>
         val jobId = rs.int("job_id")

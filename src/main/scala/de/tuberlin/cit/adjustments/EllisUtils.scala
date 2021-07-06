@@ -49,7 +49,7 @@ object EllisUtils {
       SELECT APP_EVENT.STARTED_AT, SCALE_OUT, DURATION_MS
       FROM APP_EVENT JOIN JOB_EVENT ON APP_EVENT.ID = JOB_EVENT.APP_EVENT_ID
       WHERE APP_ID = ${appSignature}
-      AND WHERE ID < ${appEventId};
+      AND ID < ${appEventId};
       """.map({ rs =>
           val startedAt = rs.timestamp("started_at")
           val scaleOut = rs.int("scale_out")
@@ -84,7 +84,7 @@ object EllisUtils {
       SELECT JOB_ID, SCALE_OUT, DURATION_MS
       FROM APP_EVENT JOIN JOB_EVENT ON APP_EVENT.ID = JOB_EVENT.APP_EVENT_ID
       WHERE APP_ID = ${appSignature}
-      AND WHERE ID < ${appEventId}
+      AND ID < ${appEventId}
       ORDER BY JOB_ID;
       """.map({ rs =>
         val jobId = rs.int("job_id")
