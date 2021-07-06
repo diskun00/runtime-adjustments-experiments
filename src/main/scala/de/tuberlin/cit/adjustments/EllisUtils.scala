@@ -10,8 +10,8 @@ import scala.language.postfixOps
 
 object EllisUtils {
 
-  def computeInitialScaleOut(appSignature: String, minExecutors: Int, maxExecutors: Int, targetRuntimeMs: Int): Int = {
-    val (scaleOuts, runtimes) = EllisUtils.getNonAdaptiveRuns(appSignature)
+  def computeInitialScaleOut(appEventId: Long, appSignature: String, minExecutors: Int, maxExecutors: Int, targetRuntimeMs: Int): Int = {
+    val (scaleOuts, runtimes) = EllisUtils.getNonAdaptiveRuns(appEventId, appSignature)
 
     val halfExecutors = (minExecutors + maxExecutors) / 2
 
@@ -29,7 +29,7 @@ object EllisUtils {
       case _ =>
 
         val predictedScaleOuts = (minExecutors to maxExecutors).toArray
-        val predictedRuntimes = EllisUtils.computePredictionsFromStageRuntimes(appSignature, predictedScaleOuts)
+        val predictedRuntimes = EllisUtils.computePredictionsFromStageRuntimes(appEventId, appSignature, predictedScaleOuts)
 
         val candidateScaleOuts = (predictedScaleOuts zip predictedRuntimes)
           .filter(_._2 < targetRuntimeMs)
@@ -43,12 +43,13 @@ object EllisUtils {
     }
   }
 
-    def getNonAdaptiveRuns(appSignature: String): (Array[Int], Array[Int]) = {
+    def getNonAdaptiveRuns(appEventId: Long, appSignature: String): (Array[Int], Array[Int]) = {
       val result = DB readOnly { implicit session =>
         sql"""
       SELECT APP_EVENT.STARTED_AT, SCALE_OUT, DURATION_MS
       FROM APP_EVENT JOIN JOB_EVENT ON APP_EVENT.ID = JOB_EVENT.APP_EVENT_ID
-      WHERE APP_ID = ${appSignature};
+      WHERE APP_ID = ${appSignature}
+      AND WHERE ID < ${appEventId};
       """.map({ rs =>
           val startedAt = rs.timestamp("started_at")
           val scaleOut = rs.int("scale_out")
@@ -77,12 +78,13 @@ object EllisUtils {
       (scaleOuts, runtimes)
     }
 
-  def computePredictionsFromStageRuntimes(appSignature: String, predictedScaleOuts: Array[Int]): Array[Int] = {
+  def computePredictionsFromStageRuntimes(appEventId: Long, appSignature: String, predictedScaleOuts: Array[Int]): Array[Int] = {
     val result = DB readOnly { implicit session =>
       sql"""
       SELECT JOB_ID, SCALE_OUT, DURATION_MS
       FROM APP_EVENT JOIN JOB_EVENT ON APP_EVENT.ID = JOB_EVENT.APP_EVENT_ID
       WHERE APP_ID = ${appSignature}
+      AND WHERE ID < ${appEventId}
       ORDER BY JOB_ID;
       """.map({ rs =>
         val jobId = rs.int("job_id")
@@ -180,16 +182,17 @@ class EllisApplication() {
     }
   }
 
-  def computeInitialScaleOut(dbPath: String,
+  def computeInitialScaleOut(dbPath: String, appEventId: Long,
                              appSignature: String, minExecutors: Int, maxExecutors: Int, targetRuntimeMs: Int): Int = {
-    logger.info(s"New request: ${dbPath}, ${appSignature}, ${minExecutors}, ${maxExecutors}, ${targetRuntimeMs}")
+    logger.info(s"New request: ${dbPath}, ${appEventId}, ${appSignature}, ${minExecutors}, ${maxExecutors}, ${targetRuntimeMs}")
     if(dbPathApp != dbPath){
       init(dbPath)
     }
     createTables()
 
-    val scaleOut: Int = EllisUtils.computeInitialScaleOut(appSignature, minExecutors, maxExecutors, targetRuntimeMs)
-    logger.info(s"Initial scale-out recommendation: ${scaleOut}")
+    logger.info(s"Consider all database entries with App-Event-ID < ${appEventId}...")
+    val scaleOut: Int = EllisUtils.computeInitialScaleOut(appEventId, appSignature, minExecutors, maxExecutors, targetRuntimeMs)
+    logger.info(s"[App-Event-ID: ${appEventId}] Initial scale-out recommendation: ${scaleOut}")
 
     scaleOut
   }

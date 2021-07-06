@@ -136,7 +136,7 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
     }
 
     if (isAdaptive && method.equals("ellis")) {
-      val (scaleOuts, runtimes) = EllisUtils.getNonAdaptiveRuns(appSignature)
+      val (scaleOuts, runtimes) = EllisUtils.getNonAdaptiveRuns(appEventId, appSignature)
       if (scaleOuts.length > 3) { // do not scale adaptively for the bootstrap runs
         updateScaleOut(jobEnd.jobId)
       }
@@ -149,6 +149,7 @@ class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ex
       SELECT JOB_ID, SCALE_OUT, DURATION_MS
       FROM APP_EVENT JOIN JOB_EVENT ON APP_EVENT.ID = JOB_EVENT.APP_EVENT_ID
       WHERE APP_ID = ${appSignature}
+      AND WHERE ID < ${appEventId}
       ORDER BY JOB_ID;
       """.map({ rs =>
         val jobId = rs.int("job_id")
