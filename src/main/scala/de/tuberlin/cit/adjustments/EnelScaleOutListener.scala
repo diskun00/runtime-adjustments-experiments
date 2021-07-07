@@ -26,9 +26,8 @@ case class UpdateRequestPayload(application_execution_id: String,
                                 update_event: String,
                                 updates: String)
 
-case class PredictionResponsePayload(best_scale_out: Int,
-                                     best_predicted_runtime: Double,
-                                     do_rescale: Boolean)
+case class PredictionResponsePayload(best_predicted_scale_out_per_job: List[(Int, Int)],
+                                     best_predicted_runtime_per_job: List[(Int, Double)])
 
 case class PredictionRequestPayload(application_execution_id: String,
                                     application_id: String,
@@ -71,9 +70,17 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     FieldSerializer[scala.collection.mutable.Map[String, Any]]() +
     FieldSerializer[Map[String, Any]]()
 
-  private val currentPredictionRequest = new AtomicInteger(-1)
+  // keep track of concurrent prediction requests
+  private val concurrentPredictionRequest = new AtomicInteger(0)
+  // keep track of current job-id
   private val currentJobId = new AtomicInteger(0)
+  // keep track of actual scale-out (measured)
   private val currentScaleOut = new AtomicInteger(0)
+  // keep track of last response length (in order to determine most recent information)
+  private val lastResponseLength = new AtomicInteger(-1)
+  // cache predictions and update them from time to time
+  private val predictedScaleOutMap: ConcurrentHashMap[Int, Int] = new ConcurrentHashMap[Int, Int]()
+  predictedScaleOutMap.put(0, initialExecutors)
 
   def getInitialScaleOutCount(executorHost: String): Int = {
     val allExecutors = sparkContext.getExecutorMemoryStatus.toSeq.map(_._1)
@@ -297,12 +304,26 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     infoMap.put(mapKey, infoMap.get(mapKey).++(scala.collection.mutable.Map[String, Any](
       "end_time" -> jobEnd.time,
       "end_scale_out" -> getExecutorCount,
+      "predicted_scale_out" -> predictedScaleOutMap.get(jobEnd.jobId),
       "rescaling_time_ratio" -> rescalingTimeRatio,
       "stages" -> infoMap.get(mapKey)("stages").toString.split(",")
         .map(si => f"${si}" ->  infoMap.get(f"appId=${applicationId}-jobId=${jobEnd.jobId}-stageId=${si}")).toMap
     )))
 
-    handleUpdateScaleOut(jobEnd.jobId)
+    predictedScaleOutMap.put(jobEnd.jobId + 1,
+      predictedScaleOutMap.getOrDefault(jobEnd.jobId + 1, predictedScaleOutMap.get(jobEnd.jobId)))
+
+    if (predictedScaleOutMap.get(jobEnd.jobId + 1) != predictedScaleOutMap.get(jobEnd.jobId)) {
+
+      logger.info(s"Adjusting predicted scale-out from ${predictedScaleOutMap.get(jobEnd.jobId)} to ${predictedScaleOutMap.get(jobEnd.jobId + 1)}.")
+      val requestResult = sparkContext.requestTotalExecutors(predictedScaleOutMap.get(jobEnd.jobId + 1), 0, Map[String, Int]())
+      logger.info("Change scaling result: " + requestResult.toString)
+    }
+    else {
+      logger.info(s"Scale-out is not changed.")
+    }
+
+    handleRequestScaleOut(jobEnd.jobId)
   }
 
   override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
@@ -367,13 +388,16 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     )))
   }
 
-  def handleUpdateScaleOut(currentJobId: Int): Unit = {
+  def handleRequestScaleOut(jobId: Int): Unit = {
 
-    val mapKey: String = f"appId=${applicationId}-jobId=${currentJobId}"
-    val requestPrediction = isAdaptive && method.equals("enel") && currentPredictionRequest.get() == -1
-    if(requestPrediction){
-      currentPredictionRequest.set(currentJobId)
-    }
+    val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
+    // check if we are allowed to request prediction and max. number of concurrent requests not yet reached
+    val requestPrediction = isAdaptive && method.equals("enel") &&
+      (
+        concurrentPredictionRequest.compareAndSet(0, 1) ||
+        concurrentPredictionRequest.compareAndSet(1, 2) ||
+        concurrentPredictionRequest.compareAndSet(2, 3)
+        )
 
     val backend = AsyncHttpClientFutureBackend(
       options = SttpBackendOptions.connectionTimeout(Duration(restTimeout, SECONDS))
@@ -382,7 +406,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     val payload: PredictionRequestPayload = PredictionRequestPayload(
       applicationExecutionId,
       applicationId,
-      currentJobId,
+      jobId,
       "JOB_END",
       Json(CustomFormats).write(infoMap.get(mapKey)),
       requestPrediction)
@@ -398,22 +422,27 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       res <- response
     } {
       try{
-        val bestScaleOut: Int = res.body.right.get.best_scale_out
-        val doRescale: Boolean = res.body.right.get.do_rescale
+        val bestScaleOutPerJob: List[(Int, Int)] = res.body.right.get.best_predicted_scale_out_per_job
+        // only proceed if there are successor jobs / we got a prediction result
+        val remainingJobs = bestScaleOutPerJob
+          .filter(_._1 > currentJobId.get())
+          .sortBy(_._1)
 
-        if(doRescale && bestScaleOut != currentScaleOut.get() && !sparkContext.isStopped){
-          logger.info(s"Adjusting scale-out from ${currentScaleOut.get()} to $bestScaleOut.")
-          val requestResult = sparkContext.requestTotalExecutors(bestScaleOut, 0, Map[String, Int]())
-          logger.info("Change scaling result: " + requestResult.toString)
-        }
-        else {
-          logger.info(s"Scale-out is not changed.")
+        if(remainingJobs.nonEmpty) {
+          // update tracking values
+          if(lastResponseLength.get() == -1 || lastResponseLength.get() > bestScaleOutPerJob.length) {
+            lastResponseLength.set(bestScaleOutPerJob.length)
+            remainingJobs.foreach(tuple => {
+              predictedScaleOutMap.put(tuple._1, tuple._2)
+            })
+          }
         }
       }
       finally {
         backend.close()
-        if(currentPredictionRequest.get() == currentJobId){
-          currentPredictionRequest.set(-1)
+        // if we requested a prediction: decrement counter of concurrent prediction requests
+        if(requestPrediction){
+          concurrentPredictionRequest.decrementAndGet()
         }
       }
     }
