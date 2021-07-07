@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.concurrent.duration.{Duration, SECONDS}
+import scala.concurrent.duration.{Duration, FiniteDuration, SECONDS}
 import scala.util.Try
 
 
@@ -69,6 +69,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
   implicit val CustomFormats: Formats = DefaultFormats +
     FieldSerializer[scala.collection.mutable.Map[String, Any]]() +
     FieldSerializer[Map[String, Any]]()
+  private val futureBuffer: ListBuffer[Future[Any]] = ListBuffer[Future[Any]]()
 
   // keep track of concurrent prediction requests
   private val concurrentPredictionRequest = new AtomicInteger(0)
@@ -393,6 +394,10 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     )))
   }
 
+  def getOpenFutures: (Future[Any], FiniteDuration) = {
+    Tuple2(Future.sequence(futureBuffer.toList.filter(!_.isCompleted)), Duration(restTimeout, SECONDS))
+  }
+
   def handleRequestScaleOut(jobId: Int): Unit = {
 
     val mapKey: String = f"appId=${applicationId}-jobId=${jobId}"
@@ -422,6 +427,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       .readTimeout(Duration(restTimeout, SECONDS))
       .response(asJson[PredictionResponsePayload])
       .send(backend)
+
+    futureBuffer.append(response)
 
     for {
       res <- response

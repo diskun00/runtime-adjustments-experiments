@@ -11,6 +11,9 @@ import org.apache.spark.sql.SparkSession
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration.FiniteDuration
+
 object MPC {
   def main(args: Array[String]): Unit = {
 
@@ -29,7 +32,8 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-    spark.sparkContext.addSparkListener(new EnelScaleOutListener(spark.sparkContext, sparkConf))
+    val listener: EnelScaleOutListener = new EnelScaleOutListener(spark.sparkContext, sparkConf)
+    spark.sparkContext.addSparkListener(listener)
     spark.sparkContext.addSparkListener(new EllisScaleOutListener(spark.sparkContext, sparkConf))
 
     val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
@@ -76,6 +80,9 @@ object MPC {
       .setMetricName("accuracy")
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
+
+    val specs: (Future[Any], FiniteDuration) = listener.getOpenFutures
+    Await.result(specs._1, specs._2)
 
     spark.stop()
   }

@@ -9,6 +9,9 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration.FiniteDuration
+
 
 object LogisticRegression {
   def main(args: Array[String]): Unit = {
@@ -22,7 +25,8 @@ object LogisticRegression {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    sparkContext.addSparkListener(new EnelScaleOutListener(sparkContext, sparkConf))
+    val listener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
+    sparkContext.addSparkListener(listener)
     sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
 
     var data = sparkContext.textFile(conf.input(), sparkContext.defaultMinPartitions).map(s => {
@@ -57,6 +61,9 @@ object LogisticRegression {
     val metrics = new MulticlassMetrics(predictionAndLabels)
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
+
+    val specs: (Future[Any], FiniteDuration) = listener.getOpenFutures
+    Await.result(specs._1, specs._2)
 
     sparkContext.stop()
   }
