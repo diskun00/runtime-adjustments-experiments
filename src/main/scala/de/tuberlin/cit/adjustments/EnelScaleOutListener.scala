@@ -26,8 +26,8 @@ case class UpdateRequestPayload(application_execution_id: String,
                                 update_event: String,
                                 updates: String)
 
-case class PredictionResponsePayload(best_predicted_scale_out_per_job: List[(Int, Int)],
-                                     best_predicted_runtime_per_job: List[(Int, Double)])
+case class PredictionResponsePayload(best_predicted_scale_out_per_job: List[List[Int]],
+                                     best_predicted_runtime_per_job: List[List[Float]])
 
 case class PredictionRequestPayload(application_execution_id: String,
                                     application_id: String,
@@ -422,18 +422,18 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
       res <- response
     } {
       try{
-        val bestScaleOutPerJob: List[(Int, Int)] = res.body.right.get.best_predicted_scale_out_per_job
+        val bestScaleOutPerJob: List[List[Int]] = res.body.right.get.best_predicted_scale_out_per_job
         // only proceed if there are successor jobs / we got a prediction result
         val remainingJobs = bestScaleOutPerJob
-          .filter(_._1 > currentJobId.get() + 1)
-          .sortBy(_._1)
+          .filter(_.head > currentJobId.get() + 1)
+          .sortBy(_.head)
 
         if(remainingJobs.nonEmpty) {
           // update tracking values
           if(lastResponseLength.get() == -1 || lastResponseLength.get() > bestScaleOutPerJob.length) {
             lastResponseLength.set(bestScaleOutPerJob.length)
-            remainingJobs.foreach(tuple => {
-              predictedScaleOutMap.put(tuple._1, tuple._2)
+            remainingJobs.foreach(sub_list => {
+              predictedScaleOutMap.put(sub_list.head, sub_list.last)
             })
           }
         }
