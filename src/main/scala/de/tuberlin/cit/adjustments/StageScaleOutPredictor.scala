@@ -1,12 +1,13 @@
 package de.tuberlin.cit.adjustments
 
-import java.util.{Date, Optional}
+import java.util.Date
 import breeze.linalg._
 import de.tuberlin.cit.prediction.{Bell, Ernest, UnivariatePredictor}
 import org.apache.spark.SparkContext
 import org.apache.spark.scheduler._
+import org.slf4j.{Logger, LoggerFactory}
 import scalikejdbc._
-import org.apache.log4j.{Logger}
+
 import scala.language.postfixOps
 
 class StageScaleOutPredictor(
@@ -27,7 +28,7 @@ class StageScaleOutPredictor(
   private var scaleOut: Int = _
   private var nextScaleOut: Int = _
 
-  private val logger: Logger = Logger.getLogger(classOf[StageScaleOutPredictor])
+  private val logger: Logger = LoggerFactory.getLogger(classOf[StageScaleOutPredictor])
 
   Class.forName("org.h2.Driver")
   ConnectionPool.singleton(s"jdbc:h2:$dbPath", "sa", "")

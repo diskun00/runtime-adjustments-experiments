@@ -2,7 +2,7 @@ package de.tuberlin.cit.adjustments
 
 import breeze.linalg._
 import de.tuberlin.cit.prediction.{Bell, Ernest, UnivariatePredictor}
-import org.apache.log4j.Logger
+import org.slf4j.{Logger, LoggerFactory}
 import scalikejdbc._
 
 import scala.language.postfixOps
@@ -148,7 +148,7 @@ object EllisUtils {
 
 class EllisApplication() {
 
-  private val logger: Logger = Logger.getLogger(classOf[EllisApplication])
+  private val logger: Logger = LoggerFactory.getLogger(classOf[EllisApplication])
   private var dbPathApp: String = _
 
   def init(dbPath: String): Unit ={

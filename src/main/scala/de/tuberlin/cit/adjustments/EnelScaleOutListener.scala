@@ -1,12 +1,12 @@
 package de.tuberlin.cit.adjustments
 
-import org.apache.log4j.Logger
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler._
 import org.apache.spark.storage.RDDInfo
 import org.apache.spark.{SparkConf, SparkContext}
 import org.json4s.native.{Json, Serialization}
 import org.json4s.{DefaultFormats, FieldSerializer, Formats}
+import org.slf4j.{Logger, LoggerFactory}
 import sttp.client3._
 import sttp.client3.asynchttpclient.future.AsyncHttpClientFutureBackend
 import sttp.client3.json4s._
@@ -39,7 +39,7 @@ case class PredictionRequestPayload(application_execution_id: String,
 
 class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) extends SparkListener {
 
-  private val logger: Logger = Logger.getLogger(classOf[EnelScaleOutListener])
+  private val logger: Logger = LoggerFactory.getLogger(classOf[EnelScaleOutListener])
   logger.info("Initializing Enel listener")
   private val applicationId: String = sparkConf.getAppId
   private val applicationSignature: String = sparkConf.get("spark.app.name")
@@ -425,7 +425,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         val bestScaleOutPerJob: List[(Int, Int)] = res.body.right.get.best_predicted_scale_out_per_job
         // only proceed if there are successor jobs / we got a prediction result
         val remainingJobs = bestScaleOutPerJob
-          .filter(_._1 > currentJobId.get())
+          .filter(_._1 > currentJobId.get() + 1)
           .sortBy(_._1)
 
         if(remainingJobs.nonEmpty) {

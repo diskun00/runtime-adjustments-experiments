@@ -5,12 +5,12 @@ import breeze.linalg._
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.scheduler._
 import scalikejdbc._
-import org.apache.log4j.Logger
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.language.postfixOps
 
 class EllisScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) extends SparkListener {
-  private val logger: Logger = Logger.getLogger(classOf[EllisScaleOutListener])
+  private val logger: Logger = LoggerFactory.getLogger(classOf[EllisScaleOutListener])
   logger.info("Initializing Ellis listener")
   private val appSignature: String = sparkConf.get("spark.app.name")
   checkConfigurations()
