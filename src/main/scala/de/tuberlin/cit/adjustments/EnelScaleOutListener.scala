@@ -12,7 +12,7 @@ import sttp.client3.asynchttpclient.future.AsyncHttpClientFutureBackend
 import sttp.client3.json4s._
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -72,6 +72,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
 
   // keep track of concurrent prediction requests
   private val concurrentPredictionRequest = new AtomicInteger(0)
+  // only set predicted scale-out of next job if not already in jobEnd phase of predecessor job
+  private val allowUpdate = new AtomicBoolean(false)
   // keep track of current job-id
   private val currentJobId = new AtomicInteger(0)
   // keep track of actual scale-out (measured)
@@ -252,6 +254,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     }
 
     currentJobId.set(jobStart.jobId)
+    allowUpdate.compareAndSet(false, true)
 
     if(jobStart.jobId == 0){
       handleScaleOutMonitoring(None, None)
@@ -291,6 +294,8 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     if(!active){
       return
     }
+
+    allowUpdate.compareAndSet(true, false)
 
     logger.info(s"Job ${jobEnd.jobId} finished.")
 
@@ -425,7 +430,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
         val bestScaleOutPerJob: List[List[Int]] = res.body.right.get.best_predicted_scale_out_per_job
         // only proceed if there are successor jobs / we got a prediction result
         val remainingJobs = bestScaleOutPerJob
-          .filter(_.head > currentJobId.get() + 1)
+          .filter(_.head > currentJobId.get())
           .sortBy(_.head)
 
         if(remainingJobs.nonEmpty) {
@@ -433,6 +438,7 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
           if(lastResponseLength.get() == -1 || lastResponseLength.get() > bestScaleOutPerJob.length) {
             lastResponseLength.set(bestScaleOutPerJob.length)
             remainingJobs.foreach(sub_list => {
+              if(sub_list.head == (currentJobId.get() + 1) && allowUpdate.get())
               predictedScaleOutMap.put(sub_list.head, sub_list.last)
             })
           }
