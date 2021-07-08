@@ -46,7 +46,10 @@ object KMeans {
       println(v)
     })
 
-    listener.stopSpark(Left(sparkContext))
+    while(listener.hasOpenFutures){
+      Thread.sleep(5000)
+    }
+    sparkContext.stop()
   }
 }
 

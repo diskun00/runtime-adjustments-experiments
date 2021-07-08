@@ -59,7 +59,10 @@ object LogisticRegression {
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
 
-    listener.stopSpark(Left(sparkContext))
+    while(listener.hasOpenFutures){
+      Thread.sleep(5000)
+    }
+    sparkContext.stop()
   }
 }
 

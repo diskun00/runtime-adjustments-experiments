@@ -78,7 +78,10 @@ object MPC {
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
 
-    listener.stopSpark(Right(spark))
+    while(listener.hasOpenFutures){
+      Thread.sleep(5000)
+    }
+    spark.stop()
   }
 }
 
