@@ -9,9 +9,6 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration.FiniteDuration
-
 
 object LogisticRegression {
   def main(args: Array[String]): Unit = {
@@ -62,10 +59,7 @@ object LogisticRegression {
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
 
-    val specs: (Future[Any], FiniteDuration) = listener.getOpenFutures
-    Await.result(specs._1, specs._2)
-
-    sparkContext.stop()
+    listener.stopSpark(Left(sparkContext))
   }
 }
 

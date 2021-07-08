@@ -2,6 +2,7 @@ package de.tuberlin.cit.adjustments
 
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler._
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.storage.RDDInfo
 import org.apache.spark.{SparkConf, SparkContext}
 import org.json4s.native.{Json, Serialization}
@@ -15,8 +16,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-import scala.concurrent.duration.{Duration, FiniteDuration, SECONDS}
+import scala.concurrent.duration.{Duration, SECONDS}
+import scala.concurrent.{Await, Future}
 import scala.util.Try
 
 
@@ -394,8 +395,20 @@ class EnelScaleOutListener(sparkContext: SparkContext, sparkConf: SparkConf) ext
     )))
   }
 
-  def getOpenFutures: (Future[Any], FiniteDuration) = {
-    Tuple2(Future.sequence(futureBuffer.toList.filter(!_.isCompleted)), Duration(restTimeout, SECONDS))
+  def getOpenFutures: Future[Any] = {
+    Future.sequence(futureBuffer.toList.filter(!_.isCompleted))
+  }
+
+  def stopSpark(sparkEntity: Either[SparkContext, SparkSession]): Unit = {
+    Await.ready(getOpenFutures, Duration(restTimeout, SECONDS)).onComplete(f => {
+
+      logger.info(s"Wait for open futures timed out: ${f.isFailure}")
+
+      sparkEntity match {
+        case Left(c) => c.stop()
+        case Right(s) => s.stop()
+      }
+    })
   }
 
   def handleRequestScaleOut(jobId: Int): Unit = {

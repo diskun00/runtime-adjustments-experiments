@@ -11,9 +11,6 @@ import org.apache.spark.sql.SparkSession
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration.FiniteDuration
-
 object MPC {
   def main(args: Array[String]): Unit = {
 
@@ -81,10 +78,7 @@ object MPC {
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
 
-    val specs: (Future[Any], FiniteDuration) = listener.getOpenFutures
-    Await.result(specs._1, specs._2)
-
-    spark.stop()
+    listener.stopSpark(Right(spark))
   }
 }
 

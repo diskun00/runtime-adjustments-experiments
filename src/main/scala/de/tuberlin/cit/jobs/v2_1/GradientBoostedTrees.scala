@@ -7,9 +7,6 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
-
 object GradientBoostedTrees {
   def main(args: Array[String]): Unit = {
 
@@ -54,10 +51,7 @@ object GradientBoostedTrees {
     println("Test Error = " + testErr)
     println("Learned classification GBT model:\n" + model.toDebugString)
 
-    val specs: (Future[Any], FiniteDuration) = listener.getOpenFutures
-    Await.result(specs._1, specs._2)
-
-    sparkContext.stop()
+    listener.stopSpark(Left(sparkContext))
   }
 }
 

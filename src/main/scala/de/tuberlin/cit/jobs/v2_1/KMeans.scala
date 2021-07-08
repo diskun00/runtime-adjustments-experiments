@@ -9,9 +9,6 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration.FiniteDuration
-
 object KMeans {
   val MLLibKMeans = org.apache.spark.mllib.clustering.KMeans
 
@@ -49,10 +46,7 @@ object KMeans {
       println(v)
     })
 
-    val specs: (Future[Any], FiniteDuration) = listener.getOpenFutures
-    Await.result(specs._1, specs._2)
-
-    sparkContext.stop()
+    listener.stopSpark(Left(sparkContext))
   }
 }
 
