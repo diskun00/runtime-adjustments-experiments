@@ -1,6 +1,7 @@
 package de.tuberlin.dos.jobs.v2_1
 
 import de.tuberlin.dos.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
+import de.tuberlin.dos.jobs.v2_1.Utils.{isEllisEnabled, isEnelEnabled}
 import org.apache.spark.mllib.classification.LogisticRegressionWithLBFGS
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
 import org.apache.spark.mllib.linalg.Vectors
@@ -22,9 +23,14 @@ object LogisticRegression {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val listener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(listener)
-    sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(sparkContext, sparkConf)
+      sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    }
 
     var data = sparkContext.textFile(conf.input(), sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')
@@ -59,7 +65,7 @@ object LogisticRegression {
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
 
-    while(listener.hasOpenFutures){
+    while(listener != null && listener.hasOpenFutures){
       Thread.sleep(5000)
     }
     sparkContext.stop()

@@ -4,6 +4,7 @@
 package de.tuberlin.dos.jobs.v2_1
 
 import de.tuberlin.dos.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
+import de.tuberlin.dos.jobs.v2_1.Utils.{isEllisEnabled, isEnelEnabled}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
@@ -23,9 +24,14 @@ object KMeans {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val listener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(listener)
-    sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(sparkContext, sparkConf)
+      sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    }
 
     println("Start KMeans training...")
     // Load and parse the data
@@ -46,7 +52,7 @@ object KMeans {
       println(v)
     })
 
-    while(listener.hasOpenFutures){
+    while(listener != null  && listener.hasOpenFutures){
       Thread.sleep(5000)
     }
     sparkContext.stop()

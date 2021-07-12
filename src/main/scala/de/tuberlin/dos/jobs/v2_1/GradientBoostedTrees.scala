@@ -1,6 +1,7 @@
 package de.tuberlin.dos.jobs.v2_1
 
 import de.tuberlin.dos.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
+import de.tuberlin.dos.jobs.v2_1.Utils.{isEllisEnabled, isEnelEnabled}
 import org.apache.spark.mllib.tree.configuration.BoostingStrategy
 import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.{SparkConf, SparkContext}
@@ -18,10 +19,14 @@ object GradientBoostedTrees {
 
     val sparkContext = new SparkContext(sparkConf)
 
-    val listener: EnelScaleOutListener = new EnelScaleOutListener(sparkContext, sparkConf)
-    sparkContext.addSparkListener(listener)
-    sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
-
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(sparkContext, sparkConf)
+      sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    }
     sparkContext.textFile(conf.input())
 
     // Load and parse the data file.
@@ -51,7 +56,7 @@ object GradientBoostedTrees {
     println("Test Error = " + testErr)
     println("Learned classification GBT model:\n" + model.toDebugString)
 
-    while(listener.hasOpenFutures){
+    while(listener != null && listener.hasOpenFutures){
       Thread.sleep(5000)
     }
     sparkContext.stop()

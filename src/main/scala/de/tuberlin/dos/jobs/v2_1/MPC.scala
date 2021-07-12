@@ -1,6 +1,7 @@
 package de.tuberlin.dos.jobs.v2_1
 
 import de.tuberlin.dos.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
+import de.tuberlin.dos.jobs.v2_1.Utils.{isEllisEnabled, isEnelEnabled}
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
@@ -29,9 +30,14 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-    val listener: EnelScaleOutListener = new EnelScaleOutListener(spark.sparkContext, sparkConf)
-    spark.sparkContext.addSparkListener(listener)
-    spark.sparkContext.addSparkListener(new EllisScaleOutListener(spark.sparkContext, sparkConf))
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(spark.sparkContext, sparkConf)
+      spark.sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      spark.sparkContext.addSparkListener(new EllisScaleOutListener(spark.sparkContext, sparkConf))
+    }
 
     val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')
@@ -78,7 +84,7 @@ object MPC {
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
 
-    while(listener.hasOpenFutures){
+    while(listener != null && listener.hasOpenFutures){
       Thread.sleep(5000)
     }
     spark.stop()
