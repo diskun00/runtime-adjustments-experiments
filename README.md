@@ -27,7 +27,7 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
 
 * Usage
   
-    The entry class is `de.tuberlin.dos.adjustments.EllisScaleOutListener`.
+    The entry class is `de.tu_berlin.dos.arm.spark_utils.adjustments.EllisScaleOutListener`.
     
     You can either set it as an additional listener in Spark (which can be transparent to users), or you can explicitly create it in your Spark applications.
     In order to run the listener independently (without Spark Operator), you can pass the parameters like the example below.
@@ -59,7 +59,7 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
   
   1. Vandermonde and Points 
     
-      The generators are in `/src` folder under package `de.tuberlin.dos.datagens`.  
+      The generators are in `/src` folder under package `de.tu_berlin.dos.arm.spark_utils.datagens`.  
   
   2. Multiclass
   
@@ -68,4 +68,4 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
 
 * Workload
   
-  Workloads are located in `de.tuberlin.dos.jobs.v2_1`.
+  Workloads are located in `de.tu_berlin.dos.arm.spark_utils.jobs.v2_1`.
