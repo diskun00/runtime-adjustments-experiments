@@ -11,14 +11,19 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
     
 * Usage
   
-    The entry class is `de.tuberlin.cit.adjustments.EllisScaleOutListener`
+    The entry class is `de.tuberlin.dos.adjustments.EllisScaleOutListener`
     
     You can either set it as an additional listener in Spark (which can be transparent to users), or you can explicitly create it in your Spark applications.
 
 * Dataset Generator
-
-  The generators are in `de.tuberlin.cit.datagens`.  
+  1. Vandermonde and Points 
+    
+      The generators are in `/src` folder under package `de.tuberlin.dos.datagens`.  
+  
+  2. Multiclass
+  
+      The generator is in `/python` folder.
 
 * Workload
     
-  Workloads are located in `de.tuberlin.cit.jobs.v2_1`.
+  Workloads are located in `de.tuberlin.dos.jobs.v2_1`.

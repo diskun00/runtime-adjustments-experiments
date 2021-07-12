@@ -16,7 +16,7 @@ for (( i = 0; i < 2; i++ )); do
     --deploy-mode cluster \
     --executor-cores 8 \
     --properties-file conf/spark-defaults.conf \
-    --class de.tuberlin.cit.jobs.ConnectedComponents \
+    --class de.tuberlin.dos.jobs.ConnectedComponents \
     ../target/runtime-adjustments-experiments-1.0-SNAPSHOT-jar-with-dependencies.jar \
     --min-containers 10 \
     --max-containers 50 \

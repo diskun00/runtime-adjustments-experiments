@@ -16,7 +16,7 @@ for (( i = 0; i < 50; i++ )); do
     --deploy-mode cluster \
     --executor-cores 8 \
     --properties-file conf/spark-defaults.conf \
-    --class de.tuberlin.cit.jobs.GradientBoostedTrees \
+    --class de.tuberlin.dos.jobs.GradientBoostedTrees \
     ../target/runtime-adjustments-experiments-1.0-SNAPSHOT-jar-with-dependencies.jar \
     --min-containers 4 \
     --max-containers 50 \

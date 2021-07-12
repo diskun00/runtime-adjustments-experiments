@@ -17,7 +17,7 @@ for (( i = 0; i < 10; i++ )); do
     --deploy-mode cluster \
     --executor-cores 8 \
     --properties-file conf/spark-defaults.conf \
-    --class de.tuberlin.cit.jobs.PageRank \
+    --class de.tuberlin.dos.jobs.PageRank \
     ../target/runtime-adjustments-experiments-1.0-SNAPSHOT-jar-with-dependencies.jar \
     --min-containers 10 \
     --max-containers 50 \
