@@ -1,4 +1,4 @@
-package de.tu_berlin.dos.arm.spark_utils.jobs.v2_1
+package de.tu_berlin.dos.arm.spark_utils.jobs
 
 import org.apache.spark.SparkConf
 

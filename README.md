@@ -68,4 +68,4 @@ Thamsen, Lauritz, et al. "Ellis: Dynamically Scaling Distributed Dataflows to Me
 
 * Workload
   
-  Workloads are located in `de.tu_berlin.dos.arm.spark_utils.jobs.v2_1`.
+  Workloads are located in `de.tu_berlin.dos.arm.spark_utils.jobs`.

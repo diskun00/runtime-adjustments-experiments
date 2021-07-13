@@ -1,12 +1,14 @@
-package de.tu_berlin.dos.arm.spark_utils.jobs.v1
+package de.tu_berlin.dos.arm.spark_utils.jobs
 
-import de.tu_berlin.dos.arm.spark_utils.adjustments.StageScaleOutPredictor
-import org.apache.spark.sql.SparkSession
+import Utils.{isEllisEnabled, isEnelEnabled}
+import de.tu_berlin.dos.arm.spark_utils.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
+import org.apache.spark.SparkConf
 import org.apache.spark.ml.classification.MultilayerPerceptronClassifier
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
-import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.ml.feature.{LabeledPoint => NewLabeledPoint}
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.sql.SparkSession
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
@@ -28,19 +30,27 @@ object MPC {
       .getOrCreate()
     import spark.implicits._
 
-    val listener = new StageScaleOutPredictor(
-      spark.sparkContext,
-      appSignature,
-      conf.dbPath(),
-      conf.minContainers(),
-      conf.maxContainers(),
-      conf.maxRuntime().toInt,
-      conf.adaptive())
-    spark.sparkContext.addSparkListener(listener)
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(spark.sparkContext, sparkConf)
+      spark.sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      spark.sparkContext.addSparkListener(new EllisScaleOutListener(spark.sparkContext, sparkConf))
+    }
 
-    val data = MLUtils.loadLabeledPoints(spark.sparkContext, conf.input()).map(lp => {
-      NewLabeledPoint(lp.label, lp.features.asML)
-    }).toDF()
+    val data = spark.sparkContext.textFile(conf.input(), spark.sparkContext.defaultMinPartitions).map(s => {
+      val parts = s.split(',')
+      val (labelStr, featuresArr) = parts.splitAt(1)
+      val label = java.lang.Double.parseDouble(labelStr(0))
+      val features = Vectors.dense(featuresArr.map(java.lang.Double.parseDouble))
+      LabeledPoint(label, features)
+    })
+      .map(lp => {
+        NewLabeledPoint(lp.label, lp.features.asML)
+      })
+      .toDF()
+
 
     // Split the data into train and test
     val splits = data.randomSplit(Array(0.8, 0.2), seed = 1234L)
@@ -50,7 +60,9 @@ object MPC {
     // specify layers for the neural network:
     // input layer of size 4 (features), two intermediate of size 5 and 4
     // and output of size 3 (classes)
-    val layers = Array[Int](50, 100, 50, 3)
+    val input_dimension = conf.input_dimension()
+    val output_dimension = conf.output_size()
+    val layers = Array[Int](input_dimension, 100, 50, output_dimension)
 
     // create the trainer and set its parameters
     val trainer = new MultilayerPerceptronClassifier()
@@ -72,6 +84,9 @@ object MPC {
 
     println("Test set accuracy = " + evaluator.evaluate(predictionAndLabels))
 
+    while(listener != null && listener.hasOpenFutures){
+      Thread.sleep(5000)
+    }
     spark.stop()
   }
 }
@@ -80,28 +95,14 @@ class MPCArgs(a: Seq[String]) extends ScallopConf(a) {
   //  val config = opt[String](required = true,
   //    descr = "Path to the .conf file")
   //
-  val dbPath: ScallopOption[String] = opt[String](name = "db", noshort = true, descr = "Path to the H2 database", default = Some("./target/bell"))
   val input: ScallopOption[String] = trailArg[String](required = true, name = "<input>",
     descr = "Input file").map(_.toLowerCase)
-  val maxRuntime: ScallopOption[Double] = opt[Double](required = true, short = 'r',
-    descr = "Maximum runtime in seconds")
-  val minContainers: ScallopOption[Int] = opt[Int](short = 'n', default = Option(1),
-    descr = "Minimum number of containers to assign")
-  val maxContainers: ScallopOption[Int] = opt[Int](required = true, short = 'N',
-    descr = "Maximum number of containers to assign")
-
-  //  val memory = opt[Int](
-  //    descr = "Memory per container, in MB")
-  //  val masterMemory = opt[Int](short = 'M',
-  //    descr = "Master memory, in MB (Flink JobManager or Spark driver)")
-  //  val slots = opt[Int](
-  //    descr = "Number of slots per TaskManager")
   val iterations: ScallopOption[Int] = opt[Int](noshort = true, default = Option(100),
     descr = "Amount of SGD iterations")
-  val cache: ScallopOption[Boolean] = opt[Boolean](noshort = true, default = Option(false),
-    descr = "Caches the input data")
-  val adaptive: ScallopOption[Boolean] = opt[Boolean](default = Option(false), noshort = true,
-    descr = "Enables runtime adjustments by scaling between jobs")
+  val input_dimension: ScallopOption[Int] = opt[Int](noshort = true, default = Option(200),
+    descr = "Dimension of input")
+  val output_size: ScallopOption[Int] = opt[Int](noshort = true, default = Option(3),
+    descr = "Size of output")
 
   override def onError(e: Throwable): Unit = e match {
     case ScallopException(message) =>

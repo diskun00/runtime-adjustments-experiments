@@ -1,12 +1,14 @@
-package de.tu_berlin.dos.arm.spark_utils.jobs.v2
+package de.tu_berlin.dos.arm.spark_utils.jobs
 
+import Utils.{isEllisEnabled, isEnelEnabled}
+import de.tu_berlin.dos.arm.spark_utils.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.mllib.classification.LogisticRegressionWithLBFGS
 import org.apache.spark.mllib.evaluation.MulticlassMetrics
+import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
 import org.rogach.scallop.{ScallopConf, ScallopOption}
-import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.regression.LabeledPoint
 
 
 object LogisticRegression {
@@ -20,6 +22,15 @@ object LogisticRegression {
       .setAppName(appSignature)
 
     val sparkContext = new SparkContext(sparkConf)
+
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(sparkContext, sparkConf)
+      sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    }
 
     var data = sparkContext.textFile(conf.input(), sparkContext.defaultMinPartitions).map(s => {
       val parts = s.split(',')
@@ -53,6 +64,10 @@ object LogisticRegression {
     val metrics = new MulticlassMetrics(predictionAndLabels)
     val accuracy = metrics.accuracy
     println(s"Accuracy = $accuracy")
+
+    while(listener != null && listener.hasOpenFutures){
+      Thread.sleep(5000)
+    }
     sparkContext.stop()
   }
 }

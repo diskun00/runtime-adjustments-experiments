@@ -1,4 +1,4 @@
-package de.tu_berlin.dos.arm.spark_utils.jobs.v2_1
+package de.tu_berlin.dos.arm.spark_utils.jobs
 
 import Utils.{isEllisEnabled, isEnelEnabled}
 import de.tu_berlin.dos.arm.spark_utils.adjustments.{EllisScaleOutListener, EnelScaleOutListener}

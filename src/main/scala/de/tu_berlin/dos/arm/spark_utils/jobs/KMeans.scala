@@ -1,8 +1,10 @@
 /*
  * KMeans workload for BigDataBench
  */
-package de.tu_berlin.dos.arm.spark_utils.jobs.v2
+package de.tu_berlin.dos.arm.spark_utils.jobs
 
+import Utils.{isEllisEnabled, isEnelEnabled}
+import de.tu_berlin.dos.arm.spark_utils.adjustments.{EllisScaleOutListener, EnelScaleOutListener}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.{SparkConf, SparkContext}
 import org.rogach.scallop.exceptions.ScallopException
@@ -16,10 +18,20 @@ object KMeans {
     val conf = new KMeansArgs(args)
     val appSignature = "KMeans"
 
-    var splits = 2
+    val splits = 2
     val sparkConf = new SparkConf()
       .setAppName(appSignature)
+
     val sparkContext = new SparkContext(sparkConf)
+
+    var listener: EnelScaleOutListener = null
+    if (isEnelEnabled(sparkConf)){
+      listener = new EnelScaleOutListener(sparkContext, sparkConf)
+      sparkContext.addSparkListener(listener)
+    }
+    if (isEllisEnabled(sparkConf)) {
+      sparkContext.addSparkListener(new EllisScaleOutListener(sparkContext, sparkConf))
+    }
 
     println("Start KMeans training...")
     // Load and parse the data
@@ -39,8 +51,11 @@ object KMeans {
     clusters.clusterCenters.foreach(v => {
       println(v)
     })
-    sparkContext.stop()
 
+    while(listener != null  && listener.hasOpenFutures){
+      Thread.sleep(5000)
+    }
+    sparkContext.stop()
   }
 }
 
