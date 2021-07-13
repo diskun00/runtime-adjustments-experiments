@@ -184,4 +184,12 @@
         </plugins>
     </build>
 
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>runtime-adjustments-experiments</name>
+            <url>https://maven.pkg.github.com/diskun00/runtime-adjustments-experiments</url>
+        </repository>
+    </distributionManagement>
+
 </project>
