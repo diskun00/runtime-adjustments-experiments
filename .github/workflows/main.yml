@@ -1,5 +1,10 @@
 name: Publish package to GitHub Packages
 on:
+  push:
+    branches:
+      - scala2.12
+  workflow_dispatch:
+
   release:
     types: [created]
 jobs:
